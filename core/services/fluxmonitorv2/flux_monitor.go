@@ -153,11 +153,11 @@ func NewFromJobSpec(
 ) (*FluxMonitor, error) {
 	fmSpec := jobSpec.FluxMonitorSpec
 
-	if !validatePollTimer(fmSpec.PollTimerDisabled, cfg.MinimumPollingInterval(), fmSpec.PollTimerPeriod) {
+	if !validatePollTimer(fmSpec.PollTimerDisabled, MinimumPollingInterval(cfg), fmSpec.PollTimerPeriod) {
 		return nil, fmt.Errorf(
 			"pollTimerPeriod (%s), must be equal or greater than %s",
 			fmSpec.PollTimerPeriod,
-			cfg.MinimumPollingInterval(),
+			MinimumPollingInterval(cfg),
 		)
 	}
 
@@ -174,20 +174,20 @@ func NewFromJobSpec(
 		fluxAggregator,
 		orm,
 		keyStore,
-		cfg.EvmGasLimit,
+		cfg.EvmGasLimitDefault(),
 	)
 
-	flags, err := NewFlags(cfg.FlagsContractAddress, ethClient)
+	flags, err := NewFlags(cfg.FlagsContractAddress(), ethClient)
 	logger.ErrorIf(
 		err,
 		fmt.Sprintf(
 			"unable to create Flags contract instance, check address: %s",
-			cfg.FlagsContractAddress,
+			cfg.FlagsContractAddress(),
 		),
 	)
 
 	paymentChecker := &PaymentChecker{
-		MinContractPayment: cfg.MinContractPayment,
+		MinContractPayment: cfg.MinimumContractPayment(),
 		MinJobPayment:      fmSpec.MinPayment,
 	}
 

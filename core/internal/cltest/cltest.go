@@ -38,6 +38,8 @@ import (
 	"github.com/onsi/gomega"
 	uuid "github.com/satori/go.uuid"
 	"github.com/smartcontractkit/chainlink/core/auth"
+	"github.com/smartcontractkit/chainlink/core/chains/evm"
+	evmconfig "github.com/smartcontractkit/chainlink/core/chains/evm/config"
 	"github.com/smartcontractkit/chainlink/core/cmd"
 	"github.com/smartcontractkit/chainlink/core/gracefulpanic"
 	"github.com/smartcontractkit/chainlink/core/internal/gethwrappers/generated/flux_aggregator_wrapper"
@@ -184,11 +186,11 @@ type JobPipelineV2TestHelper struct {
 	Pr  pipeline.Runner
 }
 
-func NewJobPipelineV2(t testing.TB, cfg config.EVMConfig, db *gorm.DB, ethClient eth.Client, keyStore pipeline.ETHKeyStore, txManager pipeline.TxManager) JobPipelineV2TestHelper {
+func NewJobPipelineV2(t testing.TB, cfg config.GeneralConfig, cc evm.ChainCollection, db *gorm.DB, ethClient eth.Client, keyStore pipeline.ETHKeyStore, txManager pipeline.TxManager) JobPipelineV2TestHelper {
 	prm, eb, cleanup := NewPipelineORM(t, cfg, db)
-	jrm := job.NewORM(db, cfg, prm, eb, &postgres.NullAdvisoryLocker{})
+	jrm := job.NewORM(db, cc, prm, eb, &postgres.NullAdvisoryLocker{})
 	t.Cleanup(cleanup)
-	pr := pipeline.NewRunner(prm, cfg, ethClient, keyStore, nil, txManager)
+	pr := pipeline.NewRunner(prm, cfg, cc, keyStore, nil)
 	return JobPipelineV2TestHelper{
 		prm,
 		eb,
@@ -207,7 +209,7 @@ func NewPipelineORM(t testing.TB, cfg config.GeneralConfig, db *gorm.DB) (pipeli
 	}
 }
 
-func NewEthBroadcaster(t testing.TB, db *gorm.DB, ethClient eth.Client, keyStore bulletprooftxmanager.KeyStore, config config.EVMConfig, keys ...ethkey.Key) (*bulletprooftxmanager.EthBroadcaster, func()) {
+func NewEthBroadcaster(t testing.TB, db *gorm.DB, ethClient eth.Client, keyStore bulletprooftxmanager.KeyStore, config evmconfig.ChainScopedConfig, keys ...ethkey.Key) (*bulletprooftxmanager.EthBroadcaster, func()) {
 	t.Helper()
 	eventBroadcaster := postgres.NewEventBroadcaster(config.DatabaseURL(), 0, 0)
 	err := eventBroadcaster.Start()
@@ -217,7 +219,7 @@ func NewEthBroadcaster(t testing.TB, db *gorm.DB, ethClient eth.Client, keyStore
 	}
 }
 
-func NewEthConfirmer(t testing.TB, db *gorm.DB, ethClient eth.Client, config config.EVMConfig, ks bulletprooftxmanager.KeyStore, keys []ethkey.Key) *bulletprooftxmanager.EthConfirmer {
+func NewEthConfirmer(t testing.TB, db *gorm.DB, ethClient eth.Client, config evmconfig.ChainScopedConfig, ks bulletprooftxmanager.KeyStore, keys []ethkey.Key) *bulletprooftxmanager.EthConfirmer {
 	t.Helper()
 	ec := bulletprooftxmanager.NewEthConfirmer(db, ethClient, config, ks, &postgres.NullAdvisoryLocker{}, keys, gas.NewFixedPriceEstimator(config))
 	return ec
@@ -272,15 +274,25 @@ func NewWSServer(msg string, callback func(data []byte)) (*httptest.Server, stri
 	}
 }
 
-func NewTestEVMConfig(t testing.TB) *configtest.TestEVMConfig {
+// TODO: Probably needs to be replaced by a mock ChainCollection
+// func NewTestEVMConfig(t testing.TB) *configtest.TestEVMConfig {
+//     overrides := configtest.GeneralConfigOverrides{
+//         SecretGenerator: MockSecretGenerator{},
+//         Dialect:         dialects.TransactionWrappedPostgres,
+//         AdvisoryLockID:  null.IntFrom(NewRandomInt64()),
+//     }
+//     cfg := configtest.NewTestGeneralConfigWithOverrides(t, overrides)
+//     evmcfg := configtest.NewTestEVMConfig(t, cfg)
+//     return evmcfg
+// }
+
+func NewTestGeneralConfig(t testing.TB) *configtest.TestGeneralConfig {
 	overrides := configtest.GeneralConfigOverrides{
 		SecretGenerator: MockSecretGenerator{},
 		Dialect:         dialects.TransactionWrappedPostgres,
 		AdvisoryLockID:  null.IntFrom(NewRandomInt64()),
 	}
-	cfg := configtest.NewTestGeneralConfigWithOverrides(t, overrides)
-	evmcfg := configtest.NewTestEVMConfig(t, cfg)
-	return evmcfg
+	return configtest.NewTestGeneralConfigWithOverrides(t, overrides)
 }
 
 // NewApplicationEthereumDisabled creates a new application with default config but ethereum disabled
@@ -288,8 +300,8 @@ func NewTestEVMConfig(t testing.TB) *configtest.TestEVMConfig {
 func NewApplicationEthereumDisabled(t *testing.T) (*TestApplication, func()) {
 	t.Helper()
 
-	c := NewTestEVMConfig(t)
-	c.GeneralConfig.Overrides.EthereumDisabled = null.BoolFrom(true)
+	c := NewTestGeneralConfig(t)
+	c.Overrides.EthereumDisabled = null.BoolFrom(true)
 
 	app, cleanup := NewApplicationWithConfig(t, c)
 
@@ -301,7 +313,7 @@ func NewApplicationEthereumDisabled(t *testing.T) (*TestApplication, func()) {
 func NewApplication(t testing.TB, flagsAndDeps ...interface{}) (*TestApplication, func()) {
 	t.Helper()
 
-	c := NewTestEVMConfig(t)
+	c := NewTestGeneralConfig(t)
 
 	app, cleanup := NewApplicationWithConfig(t, c, flagsAndDeps...)
 
@@ -313,14 +325,14 @@ func NewApplication(t testing.TB, flagsAndDeps ...interface{}) (*TestApplication
 func NewApplicationWithKey(t *testing.T, flagsAndDeps ...interface{}) (*TestApplication, func()) {
 	t.Helper()
 
-	config := NewTestEVMConfig(t)
+	config := NewTestGeneralConfig(t)
 	app, cleanup := NewApplicationWithConfigAndKey(t, config, flagsAndDeps...)
 	return app, cleanup
 }
 
 // NewApplicationWithConfigAndKey creates a new TestApplication with the given testorm
 // it will also provide an unlocked account on the keystore
-func NewApplicationWithConfigAndKey(t testing.TB, c *configtest.TestEVMConfig, flagsAndDeps ...interface{}) (*TestApplication, func()) {
+func NewApplicationWithConfigAndKey(t testing.TB, c *configtest.TestGeneralConfig, flagsAndDeps ...interface{}) (*TestApplication, func()) {
 	t.Helper()
 
 	app, cleanup := NewApplicationWithConfig(t, c, flagsAndDeps...)
@@ -346,18 +358,16 @@ const (
 )
 
 // NewApplicationWithConfig creates a New TestApplication with specified test config
-func NewApplicationWithConfig(t testing.TB, c *configtest.TestEVMConfig, flagsAndDeps ...interface{}) (*TestApplication, func()) {
+// TODO: Need some way to pass in a chain collection here
+func NewApplicationWithConfig(t testing.TB, c *configtest.TestGeneralConfig, flagsAndDeps ...interface{}) (*TestApplication, func()) {
 	t.Helper()
 
-	var ethClient eth.Client = &eth.NullClient{}
 	var advisoryLocker postgres.AdvisoryLocker = &postgres.NullAdvisoryLocker{}
 	var externalInitiatorManager webhook.ExternalInitiatorManager = &webhook.NullExternalInitiatorManager{}
 	var useRealExternalInitiatorManager bool
 
 	for _, flag := range flagsAndDeps {
 		switch dep := flag.(type) {
-		case eth.Client:
-			ethClient = dep
 		case postgres.AdvisoryLocker:
 			advisoryLocker = dep
 		case webhook.ExternalInitiatorManager:
@@ -372,13 +382,13 @@ func NewApplicationWithConfig(t testing.TB, c *configtest.TestEVMConfig, flagsAn
 	}
 
 	ta := &TestApplication{t: t}
-	appInstance, err := chainlink.NewApplication(c, ethClient, advisoryLocker)
+	appInstance, err := chainlink.NewApplication(c, advisoryLocker)
 	require.NoError(t, err)
 	app := appInstance.(*chainlink.ChainlinkApplication)
 	ta.ChainlinkApplication = app
 	server := newServer(ta)
 
-	c.GeneralConfig.Overrides.ClientNodeURL = null.StringFrom(server.URL)
+	c.Overrides.ClientNodeURL = null.StringFrom(server.URL)
 
 	if !useRealExternalInitiatorManager {
 		app.ExternalInitiatorManager = externalInitiatorManager
@@ -527,7 +537,7 @@ func (ta *TestApplication) NewClientAndRenderer() (*cmd.Client, *RendererMock) {
 	r := &RendererMock{}
 	client := &cmd.Client{
 		Renderer:   r,
-		Config:     ta.GetEVMConfig(),
+		Config:     ta.GetConfig(),
 		AppFactory: seededAppFactory{ta.ChainlinkApplication},
 		KeyStoreAuthenticator: CallbackAuthenticator{
 			Callback: func(*keystore.Eth, string) (string, error) {
@@ -549,7 +559,7 @@ func (ta *TestApplication) NewAuthenticatingClient(prompter cmd.Prompter) *cmd.C
 	cookieAuth := cmd.NewSessionCookieAuthenticator(ta.GetConfig(), &cmd.MemoryCookieStore{})
 	client := &cmd.Client{
 		Renderer:                       &RendererMock{},
-		Config:                         ta.GetEVMConfig(),
+		Config:                         ta.GetConfig(),
 		AppFactory:                     seededAppFactory{ta.ChainlinkApplication},
 		KeyStoreAuthenticator:          CallbackAuthenticator{func(*keystore.Eth, string) (string, error) { return Password, nil }},
 		FallbackAPIInitializer:         &MockAPIInitializer{},
@@ -588,7 +598,7 @@ func NewStoreWithConfig(t testing.TB, c config.GeneralConfig, flagsAndDeps ...in
 func NewStore(t *testing.T, flagsAndDeps ...interface{}) (*strpkg.Store, func()) {
 	t.Helper()
 
-	c := NewTestEVMConfig(t)
+	c := NewTestGeneralConfig(t)
 	store, storeCleanup := NewStoreWithConfig(t, c, flagsAndDeps...)
 	return store, storeCleanup
 }
@@ -1383,6 +1393,7 @@ func MustBytesToConfigDigest(t *testing.T, b []byte) ocrtypes.ConfigDigest {
 
 // MockApplicationEthCalls mocks all calls made by the chainlink application as
 // standard when starting and stopping
+// TODO: This needs to be removed probably
 func MockApplicationEthCalls(t *testing.T, app *TestApplication, ethClient *mocks.Client) (verify func()) {
 	t.Helper()
 
@@ -1391,7 +1402,7 @@ func MockApplicationEthCalls(t *testing.T, app *TestApplication, ethClient *mock
 	sub := new(mocks.Subscription)
 	sub.On("Err").Return(nil)
 	ethClient.On("SubscribeNewHead", mock.Anything, mock.Anything).Return(sub, nil)
-	ethClient.On("ChainID", mock.Anything).Return(app.Store.Config.ChainID(), nil)
+	ethClient.On("ChainID", mock.Anything).Return(app.GetConfig().DefaultChainID(), nil)
 	ethClient.On("PendingNonceAt", mock.Anything, mock.Anything).Return(uint64(0), nil).Maybe()
 	ethClient.On("HeadByNumber", mock.Anything, mock.Anything).Return(nil, nil).Maybe()
 

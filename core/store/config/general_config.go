@@ -16,13 +16,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/contrib/sessions"
-	homedir "github.com/mitchellh/go-homedir"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/pkg/errors"
-	"github.com/smartcontractkit/chainlink/core/assets"
-	"github.com/smartcontractkit/chainlink/core/chains"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/keystore/keys/ethkey"
 	"github.com/smartcontractkit/chainlink/core/services/keystore/keys/p2pkey"
@@ -56,9 +52,6 @@ type GeneralConfig interface {
 	BlockBackfillSkip() bool
 	BridgeResponseURL() *url.URL
 	CertFile() string
-	// FIXME: ChainID and Chain will be removed along with https://app.clubhouse.io/chainlinklabs/story/12739/generalise-necessary-models-tables-on-the-send-side-to-support-the-concept-of-multiple-chains
-	Chain() *chains.Chain
-	ChainID() *big.Int
 	ClientNodeURL() string
 	CreateProductionLogger() *logger.Logger
 	DatabaseBackupDir() string
@@ -67,6 +60,7 @@ type GeneralConfig interface {
 	DatabaseBackupURL() *url.URL
 	DatabaseListenerMaxReconnectDuration() time.Duration
 	DatabaseListenerMinReconnectInterval() time.Duration
+	DefaultChainID() *big.Int
 	HTTPServerWriteTimeout() time.Duration
 	DatabaseMaximumTxDuration() time.Duration
 	DatabaseTimeout() models.Duration
@@ -321,32 +315,23 @@ func (c *generalConfig) AuthenticatedRateLimit() int64 {
 
 // AuthenticatedRateLimitPeriod defines the period to which authenticated requests get limited
 func (c *generalConfig) AuthenticatedRateLimitPeriod() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("AuthenticatedRateLimitPeriod", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("AuthenticatedRateLimitPeriod", ParseDuration).(time.Duration))
 }
 
 // BlockBackfillDepth specifies the number of blocks before the current HEAD that the
 // log broadcaster will try to re-consume logs from
 func (c *generalConfig) BlockBackfillDepth() uint64 {
-	return c.getWithFallback("BlockBackfillDepth", parseUint64).(uint64)
+	return c.getWithFallback("BlockBackfillDepth", ParseUint64).(uint64)
 }
 
 // BlockBackfillSkip enables skipping of very long log backfills
 func (c *generalConfig) BlockBackfillSkip() bool {
-	return c.getWithFallback("BlockBackfillSkip", parseBool).(bool)
+	return c.getWithFallback("BlockBackfillSkip", ParseBool).(bool)
 }
 
 // BridgeResponseURL represents the URL for bridges to send a response to.
 func (c *generalConfig) BridgeResponseURL() *url.URL {
-	return c.getWithFallback("BridgeResponseURL", parseURL).(*url.URL)
-}
-
-// ChainID represents the chain ID to use for transactions.
-func (c *generalConfig) ChainID() *big.Int {
-	return c.getWithFallback("ChainID", parseBigInt).(*big.Int)
-}
-
-func (c *generalConfig) Chain() *chains.Chain {
-	return chains.ChainFromID(c.ChainID())
+	return c.getWithFallback("BridgeResponseURL", ParseURL).(*url.URL)
 }
 
 // ClientNodeURL is the URL of the Ethereum node this Chainlink node should connect to.
@@ -356,29 +341,29 @@ func (c *generalConfig) ClientNodeURL() string {
 
 // FeatureCronV2 enables the Cron v2 feature.
 func (c *generalConfig) FeatureCronV2() bool {
-	return c.getWithFallback("FeatureCronV2", parseBool).(bool)
+	return c.getWithFallback("FeatureCronV2", ParseBool).(bool)
 }
 
 // FeatureUICSAKeys enables the CSA Keys UI Feature.
 func (c *generalConfig) FeatureUICSAKeys() bool {
-	return c.getWithFallback("FeatureUICSAKeys", parseBool).(bool)
+	return c.getWithFallback("FeatureUICSAKeys", ParseBool).(bool)
 }
 
 // FeatureUICSAKeys enables the CSA Keys UI Feature.
 func (c *generalConfig) FeatureUIFeedsManager() bool {
-	return c.getWithFallback("FeatureUIFeedsManager", parseBool).(bool)
+	return c.getWithFallback("FeatureUIFeedsManager", ParseBool).(bool)
 }
 
 func (c *generalConfig) DatabaseListenerMinReconnectInterval() time.Duration {
-	return c.getWithFallback("DatabaseListenerMinReconnectInterval", parseDuration).(time.Duration)
+	return c.getWithFallback("DatabaseListenerMinReconnectInterval", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) DatabaseListenerMaxReconnectDuration() time.Duration {
-	return c.getWithFallback("DatabaseListenerMaxReconnectDuration", parseDuration).(time.Duration)
+	return c.getWithFallback("DatabaseListenerMaxReconnectDuration", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) DatabaseMaximumTxDuration() time.Duration {
-	return c.getWithFallback("DatabaseMaximumTxDuration", parseDuration).(time.Duration)
+	return c.getWithFallback("DatabaseMaximumTxDuration", ParseDuration).(time.Duration)
 }
 
 // DatabaseBackupMode sets the database backup mode
@@ -389,7 +374,7 @@ func (c *generalConfig) DatabaseBackupMode() DatabaseBackupMode {
 // DatabaseBackupFrequency turns on the periodic database backup if set to a positive value
 // DatabaseBackupMode must be then set to a value other than "none"
 func (c *generalConfig) DatabaseBackupFrequency() time.Duration {
-	return c.getWithFallback("DatabaseBackupFrequency", parseDuration).(time.Duration)
+	return c.getWithFallback("DatabaseBackupFrequency", ParseDuration).(time.Duration)
 }
 
 // DatabaseBackupURL configures the URL for the database to backup, if it's to be different from the main on
@@ -413,12 +398,12 @@ func (c *generalConfig) DatabaseBackupDir() string {
 
 // DatabaseTimeout represents how long to tolerate non response from the DB.
 func (c *generalConfig) DatabaseTimeout() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("DatabaseTimeout", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("DatabaseTimeout", ParseDuration).(time.Duration))
 }
 
 // GlobalLockRetryInterval represents how long to wait before trying again to get the global advisory lock.
 func (c *generalConfig) GlobalLockRetryInterval() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("GlobalLockRetryInterval", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("GlobalLockRetryInterval", ParseDuration).(time.Duration))
 }
 
 // DatabaseURL configures the URL for chainlink to connect to. This must be
@@ -445,7 +430,7 @@ func (c *generalConfig) MigrateDatabase() bool {
 
 // DefaultMaxHTTPAttempts defines the limit for HTTP requests.
 func (c *generalConfig) DefaultMaxHTTPAttempts() uint {
-	return uint(c.getWithFallback("DefaultMaxHTTPAttempts", parseUint64).(uint64))
+	return uint(c.getWithFallback("DefaultMaxHTTPAttempts", ParseUint64).(uint64))
 }
 
 // DefaultHTTPLimit defines the size limit for HTTP requests and responses
@@ -455,7 +440,7 @@ func (c *generalConfig) DefaultHTTPLimit() int64 {
 
 // DefaultHTTPTimeout defines the default timeout for http requests
 func (c *generalConfig) DefaultHTTPTimeout() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("DefaultHTTPTimeout", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("DefaultHTTPTimeout", ParseDuration).(time.Duration))
 }
 
 // DefaultHTTPAllowUnrestrictedNetworkAccess controls whether http requests are unrestricted by default
@@ -476,7 +461,7 @@ func (c *generalConfig) FeatureExternalInitiators() bool {
 
 // FeatureFluxMonitorV2 enables the Flux Monitor v2 job type.
 func (c *generalConfig) FeatureFluxMonitorV2() bool {
-	return c.getWithFallback("FeatureFluxMonitorV2", parseBool).(bool)
+	return c.getWithFallback("FeatureFluxMonitorV2", ParseBool).(bool)
 }
 
 // FeatureOffchainReporting enables the Flux Monitor job type.
@@ -486,7 +471,7 @@ func (c *generalConfig) FeatureOffchainReporting() bool {
 
 // FeatureWebhookV2 enables the Webhook v2 job type
 func (c *generalConfig) FeatureWebhookV2() bool {
-	return c.getWithFallback("FeatureWebhookV2", parseBool).(bool)
+	return c.getWithFallback("FeatureWebhookV2", ParseBool).(bool)
 }
 
 // FMDefaultTransactionQueueDepth controls the queue size for DropOldestStrategy in Flux Monitor
@@ -565,36 +550,36 @@ func (c *generalConfig) InsecureSkipVerify() bool {
 }
 
 func (c *generalConfig) TriggerFallbackDBPollInterval() time.Duration {
-	return c.getWithFallback("TriggerFallbackDBPollInterval", parseDuration).(time.Duration)
+	return c.getWithFallback("TriggerFallbackDBPollInterval", ParseDuration).(time.Duration)
 }
 
 // JobPipelineMaxRunDuration is the maximum time that a job run may take
 func (c *generalConfig) JobPipelineMaxRunDuration() time.Duration {
-	return c.getWithFallback("JobPipelineMaxRunDuration", parseDuration).(time.Duration)
+	return c.getWithFallback("JobPipelineMaxRunDuration", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) JobPipelineResultWriteQueueDepth() uint64 {
-	return c.getWithFallback("JobPipelineResultWriteQueueDepth", parseUint64).(uint64)
+	return c.getWithFallback("JobPipelineResultWriteQueueDepth", ParseUint64).(uint64)
 }
 
 func (c *generalConfig) JobPipelineReaperInterval() time.Duration {
-	return c.getWithFallback("JobPipelineReaperInterval", parseDuration).(time.Duration)
+	return c.getWithFallback("JobPipelineReaperInterval", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) JobPipelineReaperThreshold() time.Duration {
-	return c.getWithFallback("JobPipelineReaperThreshold", parseDuration).(time.Duration)
+	return c.getWithFallback("JobPipelineReaperThreshold", ParseDuration).(time.Duration)
 }
 
 // KeeperRegistryCheckGasOverhead is the amount of extra gas to provide checkUpkeep() calls
 // to account for the gas consumed by the keeper registry
 func (c *generalConfig) KeeperRegistryCheckGasOverhead() uint64 {
-	return c.getWithFallback("KeeperRegistryCheckGasOverhead", parseUint64).(uint64)
+	return c.getWithFallback("KeeperRegistryCheckGasOverhead", ParseUint64).(uint64)
 }
 
 // KeeperRegistryPerformGasOverhead is the amount of extra gas to provide performUpkeep() calls
 // to account for the gas consumed by the keeper registry
 func (c *generalConfig) KeeperRegistryPerformGasOverhead() uint64 {
-	return c.getWithFallback("KeeperRegistryPerformGasOverhead", parseUint64).(uint64)
+	return c.getWithFallback("KeeperRegistryPerformGasOverhead", ParseUint64).(uint64)
 }
 
 // KeeperDefaultTransactionQueueDepth controls the queue size for DropOldestStrategy in Keeper
@@ -606,7 +591,7 @@ func (c *generalConfig) KeeperDefaultTransactionQueueDepth() uint32 {
 // KeeperRegistrySyncInterval is the interval in which the RegistrySynchronizer performs a full
 // sync of the keeper registry contract it is tracking
 func (c *generalConfig) KeeperRegistrySyncInterval() time.Duration {
-	return c.getWithFallback("KeeperRegistrySyncInterval", parseDuration).(time.Duration)
+	return c.getWithFallback("KeeperRegistrySyncInterval", ParseDuration).(time.Duration)
 }
 
 // KeeperMinimumRequiredConfirmations is the minimum number of confirmations that a keeper registry log
@@ -629,7 +614,7 @@ func (c *generalConfig) JSONConsole() bool {
 
 // ExplorerURL returns the websocket URL for this node to push stats to, or nil.
 func (c *generalConfig) ExplorerURL() *url.URL {
-	rval := c.getWithFallback("ExplorerURL", parseURL)
+	rval := c.getWithFallback("ExplorerURL", ParseURL)
 	switch t := rval.(type) {
 	case nil:
 		return nil
@@ -653,7 +638,7 @@ func (c *generalConfig) ExplorerSecret() string {
 
 // TelemetryIngressURL returns the WSRPC URL for this node to push telemetry to, or nil.
 func (c *generalConfig) TelemetryIngressURL() *url.URL {
-	rval := c.getWithFallback("TelemetryIngressURL", parseURL)
+	rval := c.getWithFallback("TelemetryIngressURL", ParseURL)
 	switch t := rval.(type) {
 	case nil:
 		return nil
@@ -672,23 +657,23 @@ func (c *generalConfig) TelemetryIngressServerPubKey() string {
 
 // TelemetryIngressLogging toggles very verbose logging of raw telemetry messages for the TelemetryIngressClient
 func (c *generalConfig) TelemetryIngressLogging() bool {
-	return c.getWithFallback("TelemetryIngressLogging", parseBool).(bool)
+	return c.getWithFallback("TelemetryIngressLogging", ParseBool).(bool)
 }
 
 // FIXME: Add comments to all of these
 func (c *generalConfig) OCRBootstrapCheckInterval() time.Duration {
-	return c.getWithFallback("OCRBootstrapCheckInterval", parseDuration).(time.Duration)
+	return c.getWithFallback("OCRBootstrapCheckInterval", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) OCRContractTransmitterTransmitTimeout() time.Duration {
-	return c.getWithFallback("OCRContractTransmitterTransmitTimeout", parseDuration).(time.Duration)
+	return c.getWithFallback("OCRContractTransmitterTransmitTimeout", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) getDurationWithOverride(override time.Duration, field string) time.Duration {
 	if override != time.Duration(0) {
 		return override
 	}
-	return c.getWithFallback(field, parseDuration).(time.Duration)
+	return c.getWithFallback(field, ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) OCRObservationTimeout(override time.Duration) time.Duration {
@@ -696,7 +681,7 @@ func (c *generalConfig) OCRObservationTimeout(override time.Duration) time.Durat
 }
 
 func (c *generalConfig) OCRObservationGracePeriod() time.Duration {
-	return c.getWithFallback("OCRObservationGracePeriod", parseDuration).(time.Duration)
+	return c.getWithFallback("OCRObservationGracePeriod", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) OCRBlockchainTimeout(override time.Duration) time.Duration {
@@ -712,23 +697,23 @@ func (c *generalConfig) OCRContractPollInterval(override time.Duration) time.Dur
 }
 
 func (c *generalConfig) OCRDatabaseTimeout() time.Duration {
-	return c.getWithFallback("OCRDatabaseTimeout", parseDuration).(time.Duration)
+	return c.getWithFallback("OCRDatabaseTimeout", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) OCRDHTLookupInterval() int {
-	return int(c.getWithFallback("OCRDHTLookupInterval", parseUint16).(uint16))
+	return int(c.getWithFallback("OCRDHTLookupInterval", ParseUint16).(uint16))
 }
 
 func (c *generalConfig) OCRIncomingMessageBufferSize() int {
-	return int(c.getWithFallback("OCRIncomingMessageBufferSize", parseUint16).(uint16))
+	return int(c.getWithFallback("OCRIncomingMessageBufferSize", ParseUint16).(uint16))
 }
 
 func (c *generalConfig) OCRNewStreamTimeout() time.Duration {
-	return c.getWithFallback("OCRNewStreamTimeout", parseDuration).(time.Duration)
+	return c.getWithFallback("OCRNewStreamTimeout", ParseDuration).(time.Duration)
 }
 
 func (c *generalConfig) OCROutgoingMessageBufferSize() int {
-	return int(c.getWithFallback("OCRIncomingMessageBufferSize", parseUint16).(uint16))
+	return int(c.getWithFallback("OCRIncomingMessageBufferSize", ParseUint16).(uint16))
 }
 
 // OCRTraceLogging determines whether OCR logs at TRACE level are enabled. The
@@ -781,11 +766,11 @@ func (c *generalConfig) OCRKeyBundleID(override *models.Sha256Hash) (models.Sha2
 }
 
 func (c *generalConfig) ORMMaxOpenConns() int {
-	return int(c.getWithFallback("ORMMaxOpenConns", parseUint16).(uint16))
+	return int(c.getWithFallback("ORMMaxOpenConns", ParseUint16).(uint16))
 }
 
 func (c *generalConfig) ORMMaxIdleConns() int {
-	return int(c.getWithFallback("ORMMaxIdleConns", parseUint16).(uint16))
+	return int(c.getWithFallback("ORMMaxIdleConns", ParseUint16).(uint16))
 }
 
 // LogLevel represents the maximum level of log messages to output.
@@ -798,7 +783,7 @@ func (c *generalConfig) LogLevel() LogLevel {
 			return value
 		}
 	}
-	return c.getWithFallback("LogLevel", parseLogLevel).(LogLevel)
+	return c.getWithFallback("LogLevel", ParseLogLevel).(LogLevel)
 }
 
 // SetLogLevel saves a runtime value for the default logger level
@@ -848,7 +833,7 @@ func (c *generalConfig) LogSQLMigrations() bool {
 
 // P2PListenIP is the ip that libp2p willl bind to and listen on
 func (c *generalConfig) P2PListenIP() net.IP {
-	return c.getWithFallback("P2PListenIP", parseIP).(net.IP)
+	return c.getWithFallback("P2PListenIP", ParseIP).(net.IP)
 }
 
 // P2PListenPort is the port that libp2p will bind to and listen on
@@ -910,7 +895,7 @@ func (c *generalConfig) P2PDHTAnnouncementCounterUserPrefix() uint32 {
 }
 
 func (c *generalConfig) P2PPeerstoreWriteInterval() time.Duration {
-	return c.getWithFallback("P2PPeerstoreWriteInterval", parseDuration).(time.Duration)
+	return c.getWithFallback("P2PPeerstoreWriteInterval", ParseDuration).(time.Duration)
 }
 
 // P2PPeerID is the default peer ID that will be used, if not overridden
@@ -1031,26 +1016,31 @@ func (c *generalConfig) P2PV2BootstrappersRaw() []string {
 
 // P2PV2DeltaDial controls how far apart Dial attempts are
 func (c *generalConfig) P2PV2DeltaDial() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("P2PV2DeltaDial", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("P2PV2DeltaDial", ParseDuration).(time.Duration))
 }
 
 // P2PV2DeltaReconcile controls how often a Reconcile message is sent to every peer.
 func (c *generalConfig) P2PV2DeltaReconcile() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("P2PV2DeltaReconcile", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("P2PV2DeltaReconcile", ParseDuration).(time.Duration))
 }
 
 // Port represents the port Chainlink should listen on for client requests.
 func (c *generalConfig) Port() uint16 {
-	return c.getWithFallback("Port", parseUint16).(uint16)
+	return c.getWithFallback("Port", ParseUint16).(uint16)
+}
+
+// DefaultChainID represents the chain ID which jobs will use if one is not explicitly specified
+func (c *generalConfig) DefaultChainID() *big.Int {
+	return c.getWithFallback("DefaultChainID", ParseBigInt).(*big.Int)
 }
 
 func (c *generalConfig) HTTPServerWriteTimeout() time.Duration {
-	return c.getWithFallback("HTTPServerWriteTimeout", parseDuration).(time.Duration)
+	return c.getWithFallback("HTTPServerWriteTimeout", ParseDuration).(time.Duration)
 }
 
 // ReaperExpiration represents
 func (c *generalConfig) ReaperExpiration() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("ReaperExpiration", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("ReaperExpiration", ParseDuration).(time.Duration))
 }
 
 func (c *generalConfig) ReplayFromBlock() int64 {
@@ -1060,7 +1050,7 @@ func (c *generalConfig) ReplayFromBlock() int64 {
 // RootDir represents the location on the file system where Chainlink should
 // keep its files.
 func (c *generalConfig) RootDir() string {
-	return c.getWithFallback("RootDir", parseHomeDir).(string)
+	return c.getWithFallback("RootDir", ParseHomeDir).(string)
 }
 
 // SecureCookies allows toggling of the secure cookies HTTP flag
@@ -1070,12 +1060,12 @@ func (c *generalConfig) SecureCookies() bool {
 
 // SessionTimeout is the maximum duration that a user session can persist without any activity.
 func (c *generalConfig) SessionTimeout() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("SessionTimeout", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("SessionTimeout", ParseDuration).(time.Duration))
 }
 
 // StatsPusherLogging toggles very verbose logging of raw messages for the StatsPusher (also telemetry)
 func (c *generalConfig) StatsPusherLogging() bool {
-	return c.getWithFallback("StatsPusherLogging", parseBool).(bool)
+	return c.getWithFallback("StatsPusherLogging", ParseBool).(bool)
 }
 
 // TLSCertPath represents the file system location of the TLS certificate
@@ -1098,7 +1088,7 @@ func (c *generalConfig) TLSKeyPath() string {
 
 // TLSPort represents the port Chainlink should listen on for encrypted client requests.
 func (c *generalConfig) TLSPort() uint16 {
-	return c.getWithFallback("TLSPort", parseUint16).(uint16)
+	return c.getWithFallback("TLSPort", ParseUint16).(uint16)
 }
 
 // TLSRedirect forces TLS redirect for unencrypted connections
@@ -1113,7 +1103,7 @@ func (c *generalConfig) UnAuthenticatedRateLimit() int64 {
 
 // UnAuthenticatedRateLimitPeriod defines the period to which unauthenticated requests get limited
 func (c *generalConfig) UnAuthenticatedRateLimitPeriod() models.Duration {
-	return models.MustMakeDuration(c.getWithFallback("UnAuthenticatedRateLimitPeriod", parseDuration).(time.Duration))
+	return models.MustMakeDuration(c.getWithFallback("UnAuthenticatedRateLimitPeriod", ParseDuration).(time.Duration))
 }
 
 func (c *generalConfig) TLSDir() string {
@@ -1183,89 +1173,6 @@ func (c *generalConfig) getWithFallback(name string, parser func(string) (interf
 		log.Fatalf(`Invalid default for %s: "%s" (%s)`, name, defaultValue, err)
 	}
 	return v
-}
-
-func parseString(str string) (interface{}, error) {
-	return str, nil
-}
-
-func parseAddress(str string) (interface{}, error) {
-	if str == "" {
-		return nil, nil
-	} else if common.IsHexAddress(str) {
-		val := common.HexToAddress(str)
-		return &val, nil
-	} else if i, ok := new(big.Int).SetString(str, 10); ok {
-		val := common.BigToAddress(i)
-		return &val, nil
-	}
-	return nil, fmt.Errorf("unable to parse '%s' into EIP55-compliant address", str)
-}
-
-func parseLink(str string) (interface{}, error) {
-	i, ok := new(assets.Link).SetString(str, 10)
-	if !ok {
-		return i, fmt.Errorf("unable to parse '%v' into *assets.Link(base 10)", str)
-	}
-	return i, nil
-}
-
-func parseLogLevel(str string) (interface{}, error) {
-	var lvl LogLevel
-	err := lvl.Set(str)
-	return lvl, err
-}
-
-func parseUint16(s string) (interface{}, error) {
-	v, err := strconv.ParseUint(s, 10, 16)
-	return uint16(v), err
-}
-
-func parseUint32(s string) (interface{}, error) {
-	v, err := strconv.ParseUint(s, 10, 32)
-	return uint32(v), err
-}
-
-func parseUint64(s string) (interface{}, error) {
-	v, err := strconv.ParseUint(s, 10, 64)
-	return v, err
-}
-
-func parseF32(s string) (interface{}, error) {
-	v, err := strconv.ParseFloat(s, 32)
-	return v, err
-}
-
-func parseURL(s string) (interface{}, error) {
-	return url.Parse(s)
-}
-
-func parseIP(s string) (interface{}, error) {
-	return net.ParseIP(s), nil
-}
-
-func parseDuration(s string) (interface{}, error) {
-	return time.ParseDuration(s)
-}
-
-func parseBool(s string) (interface{}, error) {
-	return strconv.ParseBool(s)
-}
-
-func parseBigInt(str string) (interface{}, error) {
-	i, ok := new(big.Int).SetString(str, 10)
-	if !ok {
-		return i, fmt.Errorf("unable to parse %v into *big.Int(base 10)", str)
-	}
-	return i, nil
-}
-
-func parseHomeDir(str string) (interface{}, error) {
-	exp, err := homedir.Expand(str)
-	if err != nil {
-		return nil, err
-	}
-	return filepath.ToSlash(exp), nil
 }
 
 // LogLevel determines the verbosity of the events to be logged.

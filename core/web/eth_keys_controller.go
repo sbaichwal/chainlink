@@ -170,7 +170,14 @@ func (ekc *ETHKeysController) Export(c *gin.Context) {
 // queries the EthClient for the ETH balance at the address and sets it on the
 // resource.
 func (ekc *ETHKeysController) setEthBalance(ctx context.Context, accountAddr common.Address) presenters.NewETHKeyOption {
-	ethClient := ekc.App.GetEthClient()
+	// FIXME: This doesn't work if multiple chains are specified
+	// See: https://app.clubhouse.io/chainlinklabs/story/14623/showing-balance-in-ui-and-cli-should-work-for-all-chains-regression
+	chain, err := ekc.App.GetChainCollection().Default()
+	if err != nil {
+		logger.Error(err)
+		return nil
+	}
+	ethClient := chain.Client()
 	bal, err := ethClient.BalanceAt(ctx, accountAddr, nil)
 
 	return func(r *presenters.ETHKeyResource) error {
@@ -188,8 +195,15 @@ func (ekc *ETHKeysController) setEthBalance(ctx context.Context, accountAddr com
 // queries the EthClient for the LINK balance at the address and sets it on the
 // resource.
 func (ekc *ETHKeysController) setLinkBalance(accountAddr common.Address) presenters.NewETHKeyOption {
-	ethClient := ekc.App.GetEthClient()
-	addr := common.HexToAddress(ekc.App.GetEVMConfig().LinkContractAddress())
+	// FIXME: This doesn't work if multiple chains are specified
+	// See: https://app.clubhouse.io/chainlinklabs/story/14623/showing-balance-in-ui-and-cli-should-work-for-all-chains-regression
+	chain, err := ekc.App.GetChainCollection().Default()
+	if err != nil {
+		logger.Error(err)
+		return nil
+	}
+	ethClient := chain.Client()
+	addr := common.HexToAddress(chain.Config().LinkContractAddress())
 	bal, err := ethClient.GetLINKBalance(addr, accountAddr)
 
 	return func(r *presenters.ETHKeyResource) error {

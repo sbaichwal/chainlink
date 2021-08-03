@@ -3,11 +3,13 @@
 package mocks
 
 import (
-	context "context"
+	big "math/big"
 
 	config "github.com/smartcontractkit/chainlink/core/store/config"
 
-	eth "github.com/smartcontractkit/chainlink/core/services/eth"
+	context "context"
+
+	evm "github.com/smartcontractkit/chainlink/core/chains/evm"
 
 	feeds "github.com/smartcontractkit/chainlink/core/services/feeds"
 
@@ -28,8 +30,6 @@ import (
 	pipeline "github.com/smartcontractkit/chainlink/core/services/pipeline"
 
 	store "github.com/smartcontractkit/chainlink/core/store"
-
-	types "github.com/smartcontractkit/chainlink/core/services/headtracker/types"
 
 	uuid "github.com/satori/go.uuid"
 
@@ -78,6 +78,22 @@ func (_m *Application) DeleteJob(ctx context.Context, jobID int32) error {
 	return r0
 }
 
+// GetChainCollection provides a mock function with given fields:
+func (_m *Application) GetChainCollection() evm.ChainCollection {
+	ret := _m.Called()
+
+	var r0 evm.ChainCollection
+	if rf, ok := ret.Get(0).(func() evm.ChainCollection); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(evm.ChainCollection)
+		}
+	}
+
+	return r0
+}
+
 // GetConfig provides a mock function with given fields:
 func (_m *Application) GetConfig() config.GeneralConfig {
 	ret := _m.Called()
@@ -88,38 +104,6 @@ func (_m *Application) GetConfig() config.GeneralConfig {
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(config.GeneralConfig)
-		}
-	}
-
-	return r0
-}
-
-// GetEVMConfig provides a mock function with given fields:
-func (_m *Application) GetEVMConfig() config.EVMConfig {
-	ret := _m.Called()
-
-	var r0 config.EVMConfig
-	if rf, ok := ret.Get(0).(func() config.EVMConfig); ok {
-		r0 = rf()
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(config.EVMConfig)
-		}
-	}
-
-	return r0
-}
-
-// GetEthClient provides a mock function with given fields:
-func (_m *Application) GetEthClient() eth.Client {
-	ret := _m.Called()
-
-	var r0 eth.Client
-	if rf, ok := ret.Get(0).(func() eth.Client); ok {
-		r0 = rf()
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(eth.Client)
 		}
 	}
 
@@ -152,22 +136,6 @@ func (_m *Application) GetFeedsService() feeds.Service {
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(feeds.Service)
-		}
-	}
-
-	return r0
-}
-
-// GetHeadBroadcaster provides a mock function with given fields:
-func (_m *Application) GetHeadBroadcaster() types.HeadBroadcasterRegistry {
-	ret := _m.Called()
-
-	var r0 types.HeadBroadcasterRegistry
-	if rf, ok := ret.Get(0).(func() types.HeadBroadcasterRegistry); ok {
-		r0 = rf()
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(types.HeadBroadcasterRegistry)
 		}
 	}
 
@@ -300,13 +268,13 @@ func (_m *Application) PipelineORM() pipeline.ORM {
 	return r0
 }
 
-// ReplayFromBlock provides a mock function with given fields: number
-func (_m *Application) ReplayFromBlock(number uint64) error {
-	ret := _m.Called(number)
+// ReplayFromBlock provides a mock function with given fields: chainID, number
+func (_m *Application) ReplayFromBlock(chainID *big.Int, number uint64) error {
+	ret := _m.Called(chainID, number)
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(uint64) error); ok {
-		r0 = rf(number)
+	if rf, ok := ret.Get(0).(func(*big.Int, uint64) error); ok {
+		r0 = rf(chainID, number)
 	} else {
 		r0 = ret.Error(0)
 	}

@@ -63,9 +63,9 @@ func TestIntegration_ExternalInitiatorV2(t *testing.T) {
 	ethClient, _, assertMockCalls := cltest.NewEthMocksWithStartupAssertions(t)
 	defer assertMockCalls()
 
-	cfg := cltest.NewTestEVMConfig(t)
-	cfg.GeneralConfig.Overrides.FeatureExternalInitiators = null.BoolFrom(true)
-	cfg.GeneralConfig.Overrides.SetTriggerFallbackDBPollInterval(10 * time.Millisecond)
+	cfg := cltest.NewTestGeneralConfig(t)
+	cfg.Overrides.FeatureExternalInitiators = null.BoolFrom(true)
+	cfg.Overrides.SetTriggerFallbackDBPollInterval(10 * time.Millisecond)
 
 	app, cleanup := cltest.NewApplicationWithConfig(t, cfg, ethClient, cltest.UseRealExternalInitiatorManager)
 	defer cleanup()
@@ -299,12 +299,12 @@ func TestIntegration_MultiwordV2(t *testing.T) {
 
 	// Simulate a consumer contract calling to obtain ETH quotes in 3 different currencies
 	// in a single callback.
-	config := cltest.NewTestEVMConfig(t)
+	config := cltest.NewTestGeneralConfig(t)
 	user, _, operatorAddress, _, consumerContract, operatorContract, b := setupMultiWordContracts(t)
 	app, cleanup := cltest.NewApplicationWithConfigAndKeyOnSimulatedBlockchain(t, config, b)
 	defer cleanup()
 	config.Overrides.EvmHeadTrackerMaxBufferSize = null.IntFrom(100)
-	config.GeneralConfig.Overrides.SetTriggerFallbackDBPollInterval(100 * time.Millisecond)
+	config.Overrides.SetTriggerFallbackDBPollInterval(100 * time.Millisecond)
 
 	sendingKeys, err := app.KeyStore.Eth().SendingKeys()
 	require.NoError(t, err)
@@ -417,7 +417,7 @@ func setupOCRContracts(t *testing.T) (*bind.TransactOpts, *backends.SimulatedBac
 	return owner, b, ocrContractAddress, ocrContract
 }
 
-func setupNode(t *testing.T, owner *bind.TransactOpts, port int, dbName string, b *backends.SimulatedBackend) (*cltest.TestApplication, string, common.Address, ocrkey.EncryptedKeyBundle, *configtest.TestEVMConfig, func()) {
+func setupNode(t *testing.T, owner *bind.TransactOpts, port int, dbName string, b *backends.SimulatedBackend) (*cltest.TestApplication, string, common.Address, ocrkey.EncryptedKeyBundle, *configtest.TestGeneralConfig, func()) {
 	config, _, ormCleanup := heavyweight.FullTestORM(t, fmt.Sprintf("%s%d", dbName, port), true)
 
 	app, appCleanup := cltest.NewApplicationWithConfigAndKeyOnSimulatedBlockchain(t, config, b)
@@ -428,10 +428,10 @@ func setupNode(t *testing.T, owner *bind.TransactOpts, port int, dbName string, 
 	require.Len(t, p2pIDs, 1)
 	peerID := p2pIDs[0].MustGetPeerID()
 
-	config.GeneralConfig.Overrides.P2PPeerID = &peerID
-	config.GeneralConfig.Overrides.P2PListenPort = null.IntFrom(int64(port))
+	config.Overrides.P2PPeerID = &peerID
+	config.Overrides.P2PListenPort = null.IntFrom(int64(port))
 	config.Overrides.EvmHeadTrackerMaxBufferSize = null.IntFrom(100)
-	config.GeneralConfig.Overrides.Dev = null.BoolFrom(true) // Disables ocr spec validation so we can have fast polling for the test.
+	config.Overrides.Dev = null.BoolFrom(true) // Disables ocr spec validation so we can have fast polling for the test.
 
 	sendingKeys, err := app.KeyStore.Eth().SendingKeys()
 	require.NoError(t, err)
@@ -478,9 +478,9 @@ func TestIntegration_OCR(t *testing.T) {
 		// We want to quickly poll for the bootstrap node to come up, but if we poll too quickly
 		// we'll flood it with messages and slow things down. 5s is about how long it takes the
 		// bootstrap node to come up.
-		cfg.GeneralConfig.Overrides.SetOCRBootstrapCheckInterval(5 * time.Second)
+		cfg.Overrides.SetOCRBootstrapCheckInterval(5 * time.Second)
 		// GracePeriod < ObservationTimeout
-		cfg.GeneralConfig.Overrides.SetOCRObservationGracePeriod(100 * time.Millisecond)
+		cfg.Overrides.SetOCRObservationGracePeriod(100 * time.Millisecond)
 
 		kbs = append(kbs, kb)
 		apps = append(apps, app)
@@ -664,7 +664,7 @@ observationSource = """
 }
 
 func TestIntegration_DirectRequest(t *testing.T) {
-	config := cltest.NewTestEVMConfig(t)
+	config := cltest.NewTestGeneralConfig(t)
 
 	httpAwaiter := cltest.NewAwaiter()
 	httpServer, assertCalled := cltest.NewHTTPMockServer(
@@ -755,7 +755,7 @@ func TestIntegration_BlockHistoryEstimator(t *testing.T) {
 
 	var initialDefaultGasPrice int64 = 5000000000
 
-	c := cltest.NewTestEVMConfig(t)
+	c := cltest.NewTestGeneralConfig(t)
 	c.Overrides.EvmGasPriceDefault = big.NewInt(initialDefaultGasPrice)
 	c.Overrides.GasEstimatorMode = null.StringFrom("BlockHistory")
 	c.Overrides.BlockHistoryEstimatorBlockDelay = null.IntFrom(0)

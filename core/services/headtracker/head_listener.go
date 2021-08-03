@@ -3,7 +3,6 @@ package headtracker
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -30,13 +29,12 @@ var (
 )
 
 type Config interface {
-	ChainID() *big.Int
-	EvmHeadTrackerHistoryDepth() uint
-	EvmHeadTrackerMaxBufferSize() uint
-	EvmHeadTrackerSamplingInterval() time.Duration
 	BlockEmissionIdleWarningThreshold() time.Duration
 	EthereumURL() string
 	EvmFinalityDepth() uint
+	EvmHeadTrackerHistoryDepth() uint
+	EvmHeadTrackerMaxBufferSize() uint
+	EvmHeadTrackerSamplingInterval() time.Duration
 }
 
 type HeadListener struct {
@@ -202,9 +200,6 @@ func (hl *HeadListener) subscribeToHead() error {
 	if err != nil {
 		return errors.Wrap(err, "EthClient#SubscribeNewHead")
 	}
-	if err := verifyEthereumChainID(hl); err != nil {
-		return errors.Wrap(err, "verifyEthereumChainID failed")
-	}
 
 	hl.headSubscription = sub
 	hl.connected = true
@@ -238,22 +233,4 @@ func (hl *HeadListener) Connected() bool {
 	defer hl.connectedMutex.RUnlock()
 
 	return hl.connected
-}
-
-// chainIDVerify checks whether or not the ChainID from the Chainlink config
-// matches the ChainID reported by the ETH node connected to this Chainlink node.
-func verifyEthereumChainID(ht *HeadListener) error {
-	ethereumChainID, err := ht.ethClient.ChainID(context.Background())
-	if err != nil {
-		return err
-	}
-
-	if ethereumChainID.Cmp(ht.config.ChainID()) != 0 {
-		return fmt.Errorf(
-			"ethereum ChainID doesn't match chainlink config.ChainID: config ID=%d, eth RPC ID=%d",
-			ht.config.ChainID(),
-			ethereumChainID,
-		)
-	}
-	return nil
 }

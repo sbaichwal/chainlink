@@ -10,7 +10,6 @@ import (
 	"time"
 
 	p2ppeer "github.com/libp2p/go-libp2p-core/peer"
-	"github.com/smartcontractkit/chainlink/core/chains"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/eth"
 	"github.com/smartcontractkit/chainlink/core/services/keystore/keys/ethkey"
@@ -33,25 +32,15 @@ const (
 var _ config.GeneralConfig = &TestGeneralConfig{}
 
 type GeneralConfigOverrides struct {
-	KeeperRegistrySyncInterval         *time.Duration
-	BlockBackfillDepth                 null.Int
-	KeeperMinimumRequiredConfirmations null.Int
-	KeeperMaximumGracePeriod           null.Int
-
-	LogLevel         *config.LogLevel
-	LogSQLStatements null.Bool
-
-	BlockBackfillSkip null.Bool
-	P2PPeerIDError    error
-	AllowOrigins      null.String
-
 	AdminCredentialsFile                      null.String
 	AdvisoryLockID                            null.Int
-	chainID                                   null.Int
-	chain                                     *chains.Chain
+	AllowOrigins                              null.String
+	BlockBackfillDepth                        null.Int
+	BlockBackfillSkip                         null.Bool
 	ClientNodeURL                             null.String
-	DatabaseURL                               null.String
 	DatabaseTimeout                           *time.Duration
+	DatabaseURL                               null.String
+	DefaultChainID                            *big.Int
 	DefaultHTTPAllowUnrestrictedNetworkAccess null.Bool
 	DefaultHTTPTimeout                        *time.Duration
 	DefaultMaxHTTPAttempts                    null.Int
@@ -59,6 +48,11 @@ type GeneralConfigOverrides struct {
 	Dialect                                   dialects.DialectName
 	EthereumDisabled                          null.Bool
 	FeatureExternalInitiators                 null.Bool
+	KeeperMaximumGracePeriod                  null.Int
+	KeeperMinimumRequiredConfirmations        null.Int
+	KeeperRegistrySyncInterval                *time.Duration
+	LogLevel                                  *config.LogLevel
+	LogSQLStatements                          null.Bool
 	LogToDisk                                 null.Bool
 	OCRBootstrapCheckInterval                 *time.Duration
 	OCRKeyBundleID                            *models.Sha256Hash
@@ -68,6 +62,7 @@ type GeneralConfigOverrides struct {
 	P2PBootstrapPeers                         []string
 	P2PListenPort                             null.Int
 	P2PPeerID                                 *p2pkey.PeerID
+	P2PPeerIDError                            error
 	SecretGenerator                           config.SecretGenerator
 	TriggerFallbackDBPollInterval             *time.Duration
 }
@@ -86,10 +81,6 @@ func (o *GeneralConfigOverrides) SetOCRObservationTimeout(d time.Duration) {
 }
 func (o *GeneralConfigOverrides) SetDefaultHTTPTimeout(d time.Duration) {
 	o.DefaultHTTPTimeout = &d
-}
-func (o *GeneralConfigOverrides) SetChainID(id int64) {
-	o.chainID = null.IntFrom(id)
-	o.chain = chains.ChainFromID(big.NewInt(id))
 }
 
 // TestGeneralConfig defaults to whatever config.NewGeneralConfig()
@@ -137,18 +128,11 @@ func (c *TestGeneralConfig) BridgeResponseURL() *url.URL {
 	return uri
 }
 
-func (c *TestGeneralConfig) ChainID() *big.Int {
-	if c.Overrides.chainID.Valid {
-		return big.NewInt(c.Overrides.chainID.Int64)
+func (c *TestGeneralConfig) DefaultChainID() *big.Int {
+	if c.Overrides.DefaultChainID != nil {
+		return c.Overrides.DefaultChainID
 	}
 	return big.NewInt(eth.NullClientChainID)
-}
-
-func (c *TestGeneralConfig) Chain() *chains.Chain {
-	if c.Overrides.chain != nil {
-		return c.Overrides.chain
-	}
-	return c.GeneralConfig.Chain()
 }
 
 func (c *TestGeneralConfig) Dev() bool {

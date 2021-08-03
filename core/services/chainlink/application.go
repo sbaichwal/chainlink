@@ -17,23 +17,20 @@ import (
 	"github.com/gobuffalo/packr"
 	"github.com/pkg/errors"
 	uuid "github.com/satori/go.uuid"
+	"github.com/smartcontractkit/chainlink/core/chains/evm"
 	"github.com/smartcontractkit/chainlink/core/gracefulpanic"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/service"
 	"github.com/smartcontractkit/chainlink/core/services"
-	"github.com/smartcontractkit/chainlink/core/services/bulletprooftxmanager"
 	"github.com/smartcontractkit/chainlink/core/services/cron"
 	"github.com/smartcontractkit/chainlink/core/services/directrequest"
 	"github.com/smartcontractkit/chainlink/core/services/eth"
 	"github.com/smartcontractkit/chainlink/core/services/feeds"
 	"github.com/smartcontractkit/chainlink/core/services/fluxmonitorv2"
-	"github.com/smartcontractkit/chainlink/core/services/headtracker"
-	httypes "github.com/smartcontractkit/chainlink/core/services/headtracker/types"
 	"github.com/smartcontractkit/chainlink/core/services/health"
 	"github.com/smartcontractkit/chainlink/core/services/job"
 	"github.com/smartcontractkit/chainlink/core/services/keeper"
 	"github.com/smartcontractkit/chainlink/core/services/keystore"
-	"github.com/smartcontractkit/chainlink/core/services/log"
 	"github.com/smartcontractkit/chainlink/core/services/offchainreporting"
 	"github.com/smartcontractkit/chainlink/core/services/periodicbackup"
 	"github.com/smartcontractkit/chainlink/core/services/pipeline"
@@ -61,17 +58,13 @@ type Application interface {
 	GetLogger() *logger.Logger
 	GetHealthChecker() health.Checker
 	GetStore() *strpkg.Store
-	GetEthClient() eth.Client
 	GetConfig() config.GeneralConfig
-	// TODO: Remove this after multichain
-	// See: https://app.clubhouse.io/chainlinklabs/story/12739/generalise-necessary-models-tables-on-the-send-side-to-support-the-concept-of-multiple-chains
-	GetEVMConfig() config.EVMConfig
 	GetKeyStore() *keystore.Master
-	GetHeadBroadcaster() httypes.HeadBroadcasterRegistry
 	WakeSessionReaper()
 	NewBox() packr.Box
 
 	GetExternalInitiatorManager() webhook.ExternalInitiatorManager
+	GetChainCollection() evm.ChainCollection
 
 	// V2 Jobs (TOML specified)
 	JobSpawner() job.Spawner
@@ -89,7 +82,7 @@ type Application interface {
 	GetFeedsService() feeds.Service
 
 	// ReplayFromBlock of blocks
-	ReplayFromBlock(number uint64) error
+	ReplayFromBlock(chainID *big.Int, number uint64) error
 }
 
 // ChainlinkApplication contains fields for the JobSubscriber, Scheduler,
@@ -97,10 +90,7 @@ type Application interface {
 // in the services package, but the Store has its own package.
 type ChainlinkApplication struct {
 	Exiter                   func(int)
-	HeadTracker              httypes.Tracker
-	HeadBroadcaster          httypes.HeadBroadcaster
-	TxManager                bulletprooftxmanager.TxManager
-	LogBroadcaster           log.Broadcaster
+	ChainCollection          evm.ChainCollection
 	EventBroadcaster         postgres.EventBroadcaster
 	jobORM                   job.ORM
 	jobSpawner               job.Spawner
@@ -111,7 +101,6 @@ type ChainlinkApplication struct {
 	ethClient                eth.Client
 	Store                    *strpkg.Store
 	Config                   config.GeneralConfig
-	EVMConfig                config.EVMConfig
 	KeyStore                 *keystore.Master
 	ExternalInitiatorManager webhook.ExternalInitiatorManager
 	SessionReaper            utils.SleeperTask
@@ -132,23 +121,25 @@ type ChainlinkApplication struct {
 // present at the configured root directory (default: ~/.chainlink),
 // the logger at the same directory and returns the Application to
 // be used by the node.
-// TODO: Pass the DB object in here, see: https://app.clubhouse.io/chainlinklabs/story/12980/remove-store-object-entirely
-func NewApplication(cfg config.EVMConfig, ethClient eth.Client, advisoryLocker postgres.AdvisoryLocker) (Application, error) {
+// TODO: Inject more dependencies here to save booting up useless stuff in tests
+func NewApplication(cfg config.GeneralConfig, advisoryLocker postgres.AdvisoryLocker) (Application, error) {
 	var subservices []service.Service
 
+	// TODO: Remove store entirely and pass db into NewApplication, see:
+	// https://app.clubhouse.io/chainlinklabs/story/12980/remove-store-object-entirely
 	shutdownSignal := gracefulpanic.NewSignal()
 	store, err := strpkg.NewStore(cfg, advisoryLocker, shutdownSignal)
 	if err != nil {
 		return nil, err
 	}
-	gormTxm := postgres.NewGormTransactionManager(store.DB)
+	db := store.DB
 
-	setupConfig(cfg, store.DB)
+	setupConfig(cfg, db)
 
 	healthChecker := health.NewChecker()
 
 	scryptParams := utils.GetScryptParams(cfg)
-	keyStore := keystore.New(store.DB, scryptParams)
+	keyStore := keystore.New(db, scryptParams)
 
 	telemetryIngressClient := synchronization.TelemetryIngressClient(&synchronization.NoopTelemetryIngressClient{})
 	explorerClient := synchronization.ExplorerClient(&synchronization.NoopExplorerClient{})
@@ -177,142 +168,84 @@ func NewApplication(cfg config.EVMConfig, ethClient eth.Client, advisoryLocker p
 
 	// Init service loggers
 	globalLogger := cfg.CreateProductionLogger()
-	globalLogger.SetDB(store.DB)
-	serviceLogLevels, err := globalLogger.GetServiceLogLevels()
-	if err != nil {
-		logger.Fatalf("error getting log levels: %v", err)
-	}
-	headTrackerLogger, err := globalLogger.InitServiceLevelLogger(logger.HeadTracker, serviceLogLevels[logger.HeadTracker])
-	if err != nil {
-		logger.Fatal("error starting logger for head tracker", err)
-	}
-
-	var headBroadcaster httypes.HeadBroadcaster
-	var headTracker httypes.Tracker
-	if cfg.EthereumDisabled() {
-		headBroadcaster = &headtracker.NullBroadcaster{}
-		headTracker = &headtracker.NullTracker{}
-	} else {
-		headBroadcaster = headtracker.NewHeadBroadcaster()
-		orm := headtracker.NewORM(store.DB)
-		headTracker = headtracker.NewHeadTracker(headTrackerLogger, ethClient, cfg, orm, headBroadcaster)
-	}
+	globalLogger.SetDB(db)
 
 	eventBroadcaster := postgres.NewEventBroadcaster(cfg.DatabaseURL(), cfg.DatabaseListenerMinReconnectInterval(), cfg.DatabaseListenerMaxReconnectDuration())
 	subservices = append(subservices, eventBroadcaster)
 
-	var txManager bulletprooftxmanager.TxManager
-	var logBroadcaster log.Broadcaster
-	if cfg.EthereumDisabled() {
-		txManager = &bulletprooftxmanager.NullTxManager{ErrMsg: "TxManager is not running because Ethereum is disabled"}
-		logBroadcaster = &log.NullBroadcaster{ErrMsg: "LogBroadcaster is not running because Ethereum is disabled"}
-	} else {
-		// Highest seen head height is used as part of the start of LogBroadcaster backfill range
-		highestSeenHead, err2 := headTracker.HighestSeenHeadFromDB()
-		if err2 != nil {
-			return nil, err2
-		}
-
-		logBroadcaster = log.NewBroadcaster(log.NewORM(store.DB), ethClient, cfg, highestSeenHead)
-		txManager = bulletprooftxmanager.NewBulletproofTxManager(store.DB, ethClient, cfg, keyStore.Eth(), advisoryLocker, eventBroadcaster)
-		subservices = append(subservices, logBroadcaster, txManager)
+	if err := evm.ClobberNodesFromEnv(db, cfg); err != nil {
+		logger.Fatal(err)
 	}
 
-	var balanceMonitor services.BalanceMonitor
-	if cfg.BalanceMonitorEnabled() {
-		balanceMonitor = services.NewBalanceMonitor(store.DB, ethClient, keyStore.Eth())
-	} else {
-		balanceMonitor = &services.NullBalanceMonitor{}
+	chainCollection, err := evm.LoadChainCollection(globalLogger, db, cfg, keyStore.Eth(), advisoryLocker, eventBroadcaster)
+	if err != nil {
+		logger.Fatal(err)
 	}
-	subservices = append(subservices, balanceMonitor)
-
-	promReporter := services.NewPromReporter(store.MustSQLDB())
+	subservices = append(subservices, chainCollection)
+	promReporter := services.NewPromReporter(postgres.MustSQLDB(db))
 	subservices = append(subservices, promReporter)
+	for _, chain := range chainCollection.Chains() {
+		chain.HeadBroadcaster().Subscribe(promReporter)
+	}
 
 	var (
-		pipelineORM    = pipeline.NewORM(store.DB)
-		pipelineRunner = pipeline.NewRunner(pipelineORM, cfg, ethClient, keyStore.Eth(), keyStore.VRF(), txManager)
-		jobORM         = job.NewORM(store.ORM.DB, cfg, pipelineORM, eventBroadcaster, advisoryLocker)
+		pipelineORM    = pipeline.NewORM(db)
+		pipelineRunner = pipeline.NewRunner(pipelineORM, cfg, chainCollection, keyStore.Eth(), keyStore.VRF())
+		jobORM         = job.NewORM(db, chainCollection, pipelineORM, eventBroadcaster, advisoryLocker)
 	)
 
 	var (
 		delegates = map[job.Type]job.Delegate{
 			job.DirectRequest: directrequest.NewDelegate(
-				logBroadcaster,
 				pipelineRunner,
 				pipelineORM,
-				ethClient,
-				store.DB,
-				cfg),
+				db,
+				chainCollection),
 			job.Keeper: keeper.NewDelegate(
-				store.DB,
-				txManager,
+				db,
 				jobORM,
 				pipelineRunner,
-				ethClient,
-				headBroadcaster,
-				logBroadcaster,
-				cfg),
+				cfg,
+				chainCollection),
 			job.VRF: vrf.NewDelegate(
-				store.DB,
-				txManager,
+				db,
 				keyStore,
 				pipelineRunner,
 				pipelineORM,
-				logBroadcaster,
-				headBroadcaster,
-				ethClient,
-				cfg),
+				chainCollection),
 		}
 	)
 
 	// Flux monitor requires ethereum just to boot, silence errors with a null delegate
-	if cfg.EthereumDisabled() {
-		delegates[job.FluxMonitor] = &job.NullDelegate{Type: job.FluxMonitor}
-	} else if cfg.Dev() || cfg.FeatureFluxMonitorV2() {
+	if cfg.Dev() || cfg.FeatureFluxMonitorV2() {
 		delegates[job.FluxMonitor] = fluxmonitorv2.NewDelegate(
-			txManager,
 			keyStore.Eth(),
 			jobORM,
 			pipelineORM,
 			pipelineRunner,
-			store.DB,
-			ethClient,
-			logBroadcaster,
-			fluxmonitorv2.Config{
-				DefaultHTTPTimeout:             cfg.DefaultHTTPTimeout().Duration(),
-				FlagsContractAddress:           cfg.FlagsContractAddress(),
-				MinContractPayment:             cfg.MinimumContractPayment(),
-				EvmGasLimit:                    cfg.EvmGasLimitDefault(),
-				EvmMaxQueuedTransactions:       cfg.EvmMaxQueuedTransactions(),
-				FMDefaultTransactionQueueDepth: cfg.FMDefaultTransactionQueueDepth(),
-			},
+			db,
+			chainCollection,
 		)
 	}
 
 	if (cfg.Dev() && cfg.P2PListenPort() > 0) || cfg.FeatureOffchainReporting() {
 		logger.Debug("Off-chain reporting enabled")
-		concretePW := offchainreporting.NewSingletonPeerWrapper(keyStore.OCR(), cfg, store.DB)
+		concretePW := offchainreporting.NewSingletonPeerWrapper(keyStore.OCR(), cfg, db)
 		subservices = append(subservices, concretePW)
 		delegates[job.OffchainReporting] = offchainreporting.NewDelegate(
-			store.DB,
-			txManager,
+			db,
 			jobORM,
-			cfg,
 			keyStore.OCR(),
 			pipelineRunner,
-			ethClient,
-			logBroadcaster,
 			concretePW,
 			monitoringEndpointGen,
-			cfg.Chain(),
-			headBroadcaster,
+			chainCollection,
 		)
 	} else {
 		logger.Debug("Off-chain reporting disabled")
 	}
 
-	externalInitiatorManager := webhook.NewExternalInitiatorManager(store.DB, utils.UnrestrictedClient)
+	externalInitiatorManager := webhook.NewExternalInitiatorManager(db, utils.UnrestrictedClient)
 
 	var webhookJobRunner webhook.JobRunner
 	if cfg.Dev() || cfg.FeatureWebhookV2() {
@@ -325,20 +258,26 @@ func NewApplication(cfg config.EVMConfig, ethClient eth.Client, advisoryLocker p
 		delegates[job.Cron] = cron.NewDelegate(pipelineRunner)
 	}
 
+	gormTxm := postgres.NewGormTransactionManager(db)
 	jobSpawner := job.NewSpawner(jobORM, cfg, delegates, gormTxm)
-	subservices = append(subservices, jobSpawner, pipelineRunner, headBroadcaster)
+	subservices = append(subservices, jobSpawner, pipelineRunner)
 
-	feedsORM := feeds.NewORM(store.DB)
+	feedsORM := feeds.NewORM(db)
 	verORM := versioning.NewORM(postgres.WrapDbWithSqlx(
-		postgres.MustSQLDB(store.DB)),
+		postgres.MustSQLDB(db)),
 	)
-	feedsService := feeds.NewService(feedsORM, verORM, gormTxm, jobSpawner, keyStore.CSA(), keyStore.Eth(), cfg)
+
+	// TODO: Make feeds manager compatible with multiple chains
+	// See: https://app.clubhouse.io/chainlinklabs/story/14615/add-ability-to-set-chain-id-in-all-pipeline-tasks-that-interact-with-evm
+	chain, err := chainCollection.Default()
+	if err != nil {
+		logger.Fatal(err)
+	}
+	feedsService := feeds.NewService(feedsORM, verORM, gormTxm, jobSpawner, keyStore.CSA(), keyStore.Eth(), chain.Config(), chainCollection)
 
 	app := &ChainlinkApplication{
-		ethClient:                ethClient,
-		HeadBroadcaster:          headBroadcaster,
-		TxManager:                txManager,
-		LogBroadcaster:           logBroadcaster,
+		ChainCollection:          chainCollection,
+		Store:                    store,
 		EventBroadcaster:         eventBroadcaster,
 		jobORM:                   jobORM,
 		jobSpawner:               jobSpawner,
@@ -346,41 +285,24 @@ func NewApplication(cfg config.EVMConfig, ethClient eth.Client, advisoryLocker p
 		pipelineORM:              pipelineORM,
 		FeedsService:             feedsService,
 		Config:                   cfg,
-		EVMConfig:                cfg,
 		webhookJobRunner:         webhookJobRunner,
-		Store:                    store,
 		KeyStore:                 keyStore,
-		SessionReaper:            services.NewSessionReaper(store.DB, cfg),
+		SessionReaper:            services.NewSessionReaper(db, cfg),
 		Exiter:                   os.Exit,
 		ExternalInitiatorManager: externalInitiatorManager,
 		shutdownSignal:           shutdownSignal,
-		balanceMonitor:           balanceMonitor,
 		explorerClient:           explorerClient,
 		HealthChecker:            healthChecker,
-		HeadTracker:              headTracker,
 		logger:                   globalLogger,
 		// NOTE: Can keep things clean by putting more things in subservices
 		// instead of manually start/closing
 		subservices: subservices,
 	}
 
-	headBroadcaster.Subscribe(logBroadcaster)
-	headBroadcaster.Subscribe(txManager)
-	headBroadcaster.Subscribe(promReporter)
-	headBroadcaster.Subscribe(balanceMonitor)
-
-	// Log Broadcaster waits for other services' registrations
-	// until app.LogBroadcaster.DependentReady() call (see below)
-	logBroadcaster.AddDependents(1)
-
 	for _, service := range app.subservices {
 		if err = app.HealthChecker.Register(reflect.TypeOf(service).String(), service); err != nil {
 			return nil, err
 		}
-	}
-
-	if err = app.HealthChecker.Register(reflect.TypeOf(headTracker).String(), headTracker); err != nil {
-		return nil, err
 	}
 
 	return app, nil
@@ -394,9 +316,12 @@ func (app *ChainlinkApplication) SetServiceLogger(ctx context.Context, serviceNa
 	}
 
 	// TODO: Implement other service loggers
+	// TODO: How to reconcile with multichain?
 	switch serviceName {
 	case logger.HeadTracker:
-		app.HeadTracker.SetLogger(newL)
+		for _, c := range app.ChainCollection.Chains() {
+			c.HeadTracker().SetLogger(newL)
+		}
 	case logger.FluxMonitor:
 		// TODO: Set FMv2?
 	default:
@@ -432,11 +357,6 @@ func (app *ChainlinkApplication) Start() error {
 		app.Exiter(0)
 	}()
 
-	// EthClient must be dialed first because it is required in subtasks
-	if err := app.ethClient.Dial(context.Background()); err != nil {
-		return err
-	}
-
 	if err := app.Store.Start(); err != nil {
 		return err
 	}
@@ -450,21 +370,6 @@ func (app *ChainlinkApplication) Start() error {
 		if err := subservice.Start(); err != nil {
 			return err
 		}
-	}
-
-	// Log Broadcaster fully starts after all initial Register calls are done from other starting services
-	// to make sure the initial backfill covers those subscribers.
-	app.LogBroadcaster.DependentReady()
-
-	// HeadTracker deliberately started afterwards since several tasks are
-	// registered as callbacks and it's sensible to have started them before
-	// calling the first OnNewHead
-	// For example:
-	// RunManager.ResumeAllInProgress since it Connects JobSubscriber
-	// which leads to writes of JobRuns RunStatus to the db.
-	// https://www.pivotaltracker.com/story/show/162230780
-	if err := app.HeadTracker.Start(); err != nil {
-		return err
 	}
 
 	// Start HealthChecker last, so that the other services had the chance to
@@ -513,10 +418,6 @@ func (app *ChainlinkApplication) stop() error {
 		logger.Info("Gracefully exiting...")
 
 		// Stop services in the reverse order from which they were started
-
-		logger.Debug("Stopping HeadTracker...")
-		merr = multierr.Append(merr, app.HeadTracker.Stop())
-
 		for i := len(app.subservices) - 1; i >= 0; i-- {
 			service := app.subservices[i]
 			logger.Debugw("Closing service...", "serviceType", reflect.TypeOf(service))
@@ -539,21 +440,12 @@ func (app *ChainlinkApplication) stop() error {
 	return merr
 }
 
-// GetStore returns the pointer to the store for the ChainlinkApplication.
-func (app *ChainlinkApplication) GetStore() *strpkg.Store {
-	return app.Store
-}
-
 func (app *ChainlinkApplication) GetEthClient() eth.Client {
 	return app.ethClient
 }
 
 func (app *ChainlinkApplication) GetConfig() config.GeneralConfig {
 	return app.Config
-}
-
-func (app *ChainlinkApplication) GetEVMConfig() config.EVMConfig {
-	return app.EVMConfig
 }
 
 func (app *ChainlinkApplication) GetKeyStore() *keystore.Master {
@@ -582,10 +474,6 @@ func (app *ChainlinkApplication) PipelineORM() pipeline.ORM {
 
 func (app *ChainlinkApplication) GetExternalInitiatorManager() webhook.ExternalInitiatorManager {
 	return app.ExternalInitiatorManager
-}
-
-func (app *ChainlinkApplication) GetHeadBroadcaster() httypes.HeadBroadcasterRegistry {
-	return app.HeadBroadcaster
 }
 
 // WakeSessionReaper wakes up the reaper to do its reaping.
@@ -691,7 +579,19 @@ func (app *ChainlinkApplication) NewBox() packr.Box {
 	return packr.NewBox("../../../operator_ui/dist")
 }
 
-func (app *ChainlinkApplication) ReplayFromBlock(number uint64) error {
-	app.LogBroadcaster.ReplayFromBlock(int64(number))
+func (app *ChainlinkApplication) ReplayFromBlock(chainID *big.Int, number uint64) error {
+	chain, err := app.ChainCollection.Get(chainID)
+	if err != nil {
+		return err
+	}
+	chain.LogBroadcaster().ReplayFromBlock(int64(number))
 	return nil
+}
+
+func (app *ChainlinkApplication) GetChainCollection() evm.ChainCollection {
+	return app.ChainCollection
+}
+
+func (app *ChainlinkApplication) GetStore() *strpkg.Store {
+	return app.Store
 }

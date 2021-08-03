@@ -42,17 +42,17 @@ func NewSimulatedBackendIdentity(t *testing.T) *bind.TransactOpts {
 
 func NewApplicationWithConfigAndKeyOnSimulatedBlockchain(
 	t testing.TB,
-	tc *configtest.TestEVMConfig,
+	cfg *configtest.TestGeneralConfig,
 	backend *backends.SimulatedBackend,
 	flagsAndDeps ...interface{},
 ) (app *TestApplication, cleanup func()) {
-	chainId := backend.Blockchain().Config().ChainID.Int64()
-	tc.GeneralConfig.Overrides.SetChainID(chainId)
+	chainId := backend.Blockchain().Config().ChainID
+	cfg.Overrides.DefaultChainID = chainId
 
-	client := &SimulatedBackendClient{b: backend, t: t, chainId: int(chainId)}
+	client := &SimulatedBackendClient{b: backend, t: t, chainId: int(chainId.Int64())}
 	flagsAndDeps = append(flagsAndDeps, client)
 
-	app, appCleanup := NewApplicationWithConfigAndKey(t, tc, flagsAndDeps...)
+	app, appCleanup := NewApplicationWithConfigAndKey(t, cfg, flagsAndDeps...)
 	err := app.KeyStore.Eth().Unlock(Password)
 	require.NoError(t, err)
 
@@ -278,10 +278,8 @@ func (c *SimulatedBackendClient) BlockByNumber(ctx context.Context, n *big.Int) 
 }
 
 // GetChainID returns the ethereum ChainID.
-func (c *SimulatedBackendClient) ChainID(context.Context) (*big.Int, error) {
-	// The actual chain ID is c.b.Blockchain().Config().ChainID, but here we need
-	// to match the chain ID used by the testing harness.
-	return big.NewInt(int64(c.chainId)), nil
+func (c *SimulatedBackendClient) ChainID() big.Int {
+	return *big.NewInt(int64(c.chainId))
 }
 
 func (c *SimulatedBackendClient) PendingNonceAt(ctx context.Context, account common.Address) (uint64, error) {

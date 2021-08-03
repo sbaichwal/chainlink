@@ -17,7 +17,6 @@ import (
 
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/chainlink"
-	"github.com/smartcontractkit/chainlink/core/services/eth"
 	"github.com/smartcontractkit/chainlink/core/services/postgres"
 	"github.com/smartcontractkit/chainlink/core/store"
 	"github.com/smartcontractkit/chainlink/core/store/config"
@@ -63,27 +62,16 @@ func (cli *Client) errorOut(err error) error {
 
 // AppFactory implements the NewApplication method.
 type AppFactory interface {
-	NewApplication(config.EVMConfig) (chainlink.Application, error)
+	NewApplication(config.GeneralConfig) (chainlink.Application, error)
 }
 
 // ChainlinkAppFactory is used to create a new Application.
 type ChainlinkAppFactory struct{}
 
 // NewApplication returns a new instance of the node with the given config.
-func (n ChainlinkAppFactory) NewApplication(config config.EVMConfig) (chainlink.Application, error) {
-	var ethClient eth.Client
-	if config.EthereumDisabled() {
-		ethClient = &eth.NullClient{}
-	} else {
-		var err error
-		ethClient, err = eth.NewClient(config.EthereumURL(), config.EthereumHTTPURL(), config.EthereumSecondaryURLs())
-		if err != nil {
-			return nil, err
-		}
-	}
-
+func (n ChainlinkAppFactory) NewApplication(config config.GeneralConfig) (chainlink.Application, error) {
 	advisoryLock := postgres.NewAdvisoryLock(config.DatabaseURL())
-	return chainlink.NewApplication(config, ethClient, advisoryLock)
+	return chainlink.NewApplication(config, advisoryLock)
 }
 
 // Runner implements the Run method.

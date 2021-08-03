@@ -71,22 +71,6 @@ func (_m *Config) BlockHistoryEstimatorTransactionPercentile() uint16 {
 	return r0
 }
 
-// ChainID provides a mock function with given fields:
-func (_m *Config) ChainID() *big.Int {
-	ret := _m.Called()
-
-	var r0 *big.Int
-	if rf, ok := ret.Get(0).(func() *big.Int); ok {
-		r0 = rf()
-	} else {
-		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(*big.Int)
-		}
-	}
-
-	return r0
-}
-
 // EthTxReaperInterval provides a mock function with given fields:
 func (_m *Config) EthTxReaperInterval() time.Duration {
 	ret := _m.Called()
@@ -103,6 +87,20 @@ func (_m *Config) EthTxReaperInterval() time.Duration {
 
 // EthTxReaperThreshold provides a mock function with given fields:
 func (_m *Config) EthTxReaperThreshold() time.Duration {
+	ret := _m.Called()
+
+	var r0 time.Duration
+	if rf, ok := ret.Get(0).(func() time.Duration); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Get(0).(time.Duration)
+	}
+
+	return r0
+}
+
+// EthTxResendAfterThreshold provides a mock function with given fields:
+func (_m *Config) EthTxResendAfterThreshold() time.Duration {
 	ret := _m.Called()
 
 	var r0 time.Duration
@@ -314,20 +312,6 @@ func (_m *Config) EvmRPCDefaultBatchSize() uint32 {
 		r0 = rf()
 	} else {
 		r0 = ret.Get(0).(uint32)
-	}
-
-	return r0
-}
-
-// EthTxResendAfterThreshold provides a mock function with given fields:
-func (_m *Config) EthTxResendAfterThreshold() time.Duration {
-	ret := _m.Called()
-
-	var r0 time.Duration
-	if rf, ok := ret.Get(0).(func() time.Duration); ok {
-		r0 = rf()
-	} else {
-		r0 = ret.Get(0).(time.Duration)
 	}
 
 	return r0

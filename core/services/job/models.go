@@ -170,6 +170,7 @@ type OffchainReportingOracleSpec struct {
 	ContractConfigConfirmations            uint16               `toml:"contractConfigConfirmations"`
 	CreatedAt                              time.Time            `toml:"-"`
 	UpdatedAt                              time.Time            `toml:"-"`
+	ChainID                                *utils.Big           `toml:"chainID"`
 }
 
 func (s OffchainReportingOracleSpec) GetID() string {

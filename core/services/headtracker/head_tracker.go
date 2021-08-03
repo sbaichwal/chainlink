@@ -31,6 +31,7 @@ var (
 	})
 )
 
+// TODO: Scope to evm_chain_id
 // HeadTracker holds and stores the latest block number experienced by this particular node
 // in a thread safe manner. Reconstitutes the last block number from the data
 // store on reboot.

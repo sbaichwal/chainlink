@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	evmconfig "github.com/smartcontractkit/chainlink/core/chains/evm/config"
 	"github.com/smartcontractkit/chainlink/core/cmd"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/chainlink"
@@ -137,7 +138,7 @@ type InstanceAppFactory struct {
 }
 
 // NewApplication creates a new application with specified config
-func (f InstanceAppFactory) NewApplication(config config.EVMConfig) (chainlink.Application, error) {
+func (f InstanceAppFactory) NewApplication(config evmconfig.ChainScopedConfig) (chainlink.Application, error) {
 	return f.App, nil
 }
 
@@ -145,7 +146,7 @@ type seededAppFactory struct {
 	Application chainlink.Application
 }
 
-func (s seededAppFactory) NewApplication(config config.EVMConfig) (chainlink.Application, error) {
+func (s seededAppFactory) NewApplication(config config.GeneralConfig) (chainlink.Application, error) {
 	return noopStopApplication{s.Application}, nil
 }
 

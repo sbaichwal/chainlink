@@ -76,7 +76,7 @@ func startNewApplication(t *testing.T, setup ...func(opts *startOptions)) *cltes
 }
 
 // withConfig is a function option which sets config on the app
-func withConfigSet(cfgSet func(*configtest.TestEVMConfig)) func(opts *startOptions) {
+func withConfigSet(cfgSet func(*configtest.TestGeneralConfig)) func(opts *startOptions) {
 	return func(opts *startOptions) {
 		opts.SetConfig = cfgSet
 	}

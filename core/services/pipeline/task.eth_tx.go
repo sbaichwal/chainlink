@@ -11,6 +11,7 @@ import (
 	"go.uber.org/multierr"
 	"gorm.io/gorm"
 
+	"github.com/smartcontractkit/chainlink/core/chains/evm"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/bulletprooftxmanager"
 	"github.com/smartcontractkit/chainlink/core/store/models"
@@ -28,10 +29,9 @@ type ETHTxTask struct {
 	GasLimit string `json:"gasLimit"`
 	TxMeta   string `json:"txMeta"`
 
-	db        *gorm.DB
-	config    Config
-	keyStore  ETHKeyStore
-	txManager TxManager
+	db              *gorm.DB
+	keyStore        ETHKeyStore
+	chainCollection evm.ChainCollection
 }
 
 //go:generate mockery --name ETHKeyStore --output ./mocks/ --case=underscore
@@ -52,7 +52,13 @@ func (t *ETHTxTask) Type() TaskType {
 }
 
 func (t *ETHTxTask) Run(_ context.Context, vars Vars, inputs []Result) (result Result) {
-	_, err := CheckInputs(inputs, -1, -1, 0)
+	chain, err := t.chainCollection.Default()
+	if err != nil {
+		return Result{Error: errors.Wrap(err, "chain collection default")}
+	}
+	cfg := chain.Config()
+	txManager := chain.TxManager()
+	_, err = CheckInputs(inputs, -1, -1, 0)
 	if err != nil {
 		return Result{Error: errors.Wrap(err, "task inputs")}
 	}
@@ -68,7 +74,7 @@ func (t *ETHTxTask) Run(_ context.Context, vars Vars, inputs []Result) (result R
 		errors.Wrap(ResolveParam(&fromAddrs, From(VarExpr(t.From, vars), JSONWithVarExprs(t.From, vars, false), NonemptyString(t.From), nil)), "from"),
 		errors.Wrap(ResolveParam(&toAddr, From(VarExpr(t.To, vars), NonemptyString(t.To))), "to"),
 		errors.Wrap(ResolveParam(&data, From(VarExpr(t.Data, vars), NonemptyString(t.Data))), "data"),
-		errors.Wrap(ResolveParam(&gasLimit, From(VarExpr(t.GasLimit, vars), NonemptyString(t.GasLimit), t.config.EvmGasLimitDefault())), "gasLimit"),
+		errors.Wrap(ResolveParam(&gasLimit, From(VarExpr(t.GasLimit, vars), NonemptyString(t.GasLimit), cfg.EvmGasLimitDefault())), "gasLimit"),
 		errors.Wrap(ResolveParam(&txMetaMap, From(VarExpr(t.TxMeta, vars), JSONWithVarExprs(t.TxMeta, vars, false), MapParam{})), "txMeta"),
 	)
 	if err != nil {
@@ -113,7 +119,7 @@ func (t *ETHTxTask) Run(_ context.Context, vars Vars, inputs []Result) (result R
 	// NOTE: This can be easily adjusted later to allow job specs to specify the details of which strategy they would like
 	strategy := bulletprooftxmanager.SendEveryStrategy{}
 
-	_, err = t.txManager.CreateEthTransaction(t.db, fromAddr, common.Address(toAddr), []byte(data), uint64(gasLimit), &txMeta, strategy)
+	_, err = txManager.CreateEthTransaction(t.db, fromAddr, common.Address(toAddr), []byte(data), uint64(gasLimit), &txMeta, strategy)
 	if err != nil {
 		return Result{Error: errors.Wrapf(ErrTaskRunFailed, "while creating transaction: %v", err)}
 	}

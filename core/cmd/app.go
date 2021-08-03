@@ -578,6 +578,10 @@ func NewApp(client *Client) *cli.App {
 							Name:  "address, a",
 							Usage: "The address (in hex format) for the key which we want to rebroadcast transactions",
 						},
+						cli.StringFlag{
+							Name:  "evmChainID",
+							Usage: "Chain ID for which to rebroadcast transactions. If left blank, ETH_CHAIN_ID will be used.",
+						},
 						cli.Uint64Flag{
 							Name:  "gasLimit",
 							Usage: "OPTIONAL: gas limit to use for each transaction ",

@@ -311,8 +311,8 @@ func TestClient_CreateJobV2(t *testing.T) {
 func TestClient_DeleteJob(t *testing.T) {
 	t.Parallel()
 
-	app := startNewApplication(t, withConfigSet(func(c *configtest.TestEVMConfig) {
-		c.GeneralConfig.Overrides.SetTriggerFallbackDBPollInterval(10 * time.Millisecond)
+	app := startNewApplication(t, withConfigSet(func(c *configtest.TestGeneralConfig) {
+		c.Overrides.SetTriggerFallbackDBPollInterval(10 * time.Millisecond)
 	}))
 	client, r := app.NewClientAndRenderer()
 
