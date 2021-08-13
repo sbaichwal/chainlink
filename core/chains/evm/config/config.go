@@ -13,6 +13,7 @@ import (
 	evmtypes "github.com/smartcontractkit/chainlink/core/chains/evm/types"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/store/config"
+	"github.com/smartcontractkit/chainlink/core/utils"
 	ocr "github.com/smartcontractkit/libocr/offchainreporting"
 	ocrtypes "github.com/smartcontractkit/libocr/offchainreporting/types"
 	"go.uber.org/multierr"
@@ -26,6 +27,7 @@ type EVMOnlyConfig interface {
 	BlockHistoryEstimatorBlockDelay() uint16
 	BlockHistoryEstimatorBlockHistorySize() uint16
 	BlockHistoryEstimatorTransactionPercentile() uint16
+	ChainID() *big.Int
 	EthTxReaperInterval() time.Duration
 	EthTxReaperThreshold() time.Duration
 	EthTxResendAfterThreshold() time.Duration
@@ -143,10 +145,8 @@ func (c *chainScopedConfig) validate() (err error) {
 	return err
 }
 
-func (c *chainScopedConfig) getPersistedCfg() evmtypes.ChainCfg {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.persistedCfg
+func (c *chainScopedConfig) ChainID() *big.Int {
+	return c.id
 }
 
 // NOTE: The ENV vars used below will be removed after multichain is merged,
@@ -183,7 +183,7 @@ func (c *chainScopedConfig) EvmGasBumpWei() *big.Int {
 		return val.(*big.Int)
 	}
 	if c.persistedCfg.EvmGasBumpWei != nil {
-		return c.persistedCfg.EvmGasBumpWei
+		return c.persistedCfg.EvmGasBumpWei.ToInt()
 	}
 	n := c.defaultSet.gasBumpWei
 	return &n
@@ -208,7 +208,7 @@ func (c *chainScopedConfig) EvmMaxGasPriceWei() *big.Int {
 		return val.(*big.Int)
 	}
 	if c.persistedCfg.EvmMaxGasPriceWei != nil {
-		return c.persistedCfg.EvmMaxGasPriceWei
+		return c.persistedCfg.EvmMaxGasPriceWei.ToInt()
 	}
 	n := c.defaultSet.maxGasPriceWei
 	return &n
@@ -220,7 +220,7 @@ func (c *chainScopedConfig) EvmMaxGasPriceWei() *big.Int {
 // 0 value disables
 func (c *chainScopedConfig) EvmMaxQueuedTransactions() uint64 {
 	val, ok := lookupEnv("ETH_MAX_QUEUED_TRANSACTIONS", config.ParseUint64)
-	nf ok {
+	if ok {
 		return val.(uint64)
 	}
 	return c.defaultSet.maxQueuedTransactions
@@ -285,7 +285,7 @@ func (c *chainScopedConfig) SetEvmGasPriceDefault(value *big.Int) error {
 	}
 	c.persistMu.Lock()
 	defer c.persistMu.Unlock()
-	c.persistedCfg.EvmGasPriceDefault = value
+	c.persistedCfg.EvmGasPriceDefault = utils.NewBig(value)
 	// HACK: For now we do this manual cast which is less than ideal, but will
 	// be replaced with chain-specific configs in a followup PR
 	return c.orm.store("EvmGasPriceDefault", value)
@@ -345,7 +345,7 @@ func (c *chainScopedConfig) EvmHeadTrackerSamplingInterval() time.Duration {
 		return val.(time.Duration)
 	}
 	if c.persistedCfg.EvmHeadTrackerSamplingInterval != nil {
-		return *c.persistedCfg.EvmHeadTrackerSamplingInterval
+		return c.persistedCfg.EvmHeadTrackerSamplingInterval.Duration()
 	}
 	return c.defaultSet.headTrackerSamplingInterval
 }
