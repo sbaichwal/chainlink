@@ -14,7 +14,6 @@ import (
 	"github.com/smartcontractkit/chainlink/core/assets"
 	"github.com/smartcontractkit/chainlink/core/internal/cltest"
 	"github.com/smartcontractkit/chainlink/core/internal/testutils/pgtest"
-	cnull "github.com/smartcontractkit/chainlink/core/null"
 	"github.com/smartcontractkit/chainlink/core/services/bulletprooftxmanager"
 	"github.com/smartcontractkit/chainlink/core/services/keystore/keys/ethkey"
 	ksmocks "github.com/smartcontractkit/chainlink/core/services/keystore/mocks"
@@ -2282,11 +2281,7 @@ func TestEthConfirmer_ResumePendingRuns(t *testing.T) {
 		etx := cltest.MustInsertConfirmedEthTxWithAttempt(t, db, 1, 1, fromAddress)
 		attempt := etx.EthTxAttempts[0]
 		cltest.MustInsertEthReceipt(t, db, head.Number-minConfirmations, head.Hash, attempt.Hash)
-		meta := bulletprooftxmanager.EthTxMeta{
-			PipelineTaskRunID: &tr.ID,
-			MinConfirmations:  cnull.Uint32From(uint32(minConfirmations)),
-		}
-		err := db.Exec(`UPDATE eth_txes SET meta = ? WHERE id = ?`, meta, etx.ID).Error
+		err := db.Exec(`UPDATE eth_txes SET pipeline_task_run_id = ?, min_confirmations = ? WHERE id = ?`, &tr.ID, minConfirmations, etx.ID).Error
 		require.NoError(t, err)
 
 		err = ec.ResumePendingTaskRuns(context.Background(), head)
@@ -2307,11 +2302,7 @@ func TestEthConfirmer_ResumePendingRuns(t *testing.T) {
 		attempt := etx.EthTxAttempts[0]
 		cltest.MustInsertEthReceipt(t, db, head.Number, head.Hash, attempt.Hash)
 
-		meta := bulletprooftxmanager.EthTxMeta{
-			PipelineTaskRunID: &tr.ID,
-			MinConfirmations:  cnull.Uint32From(uint32(minConfirmations)),
-		}
-		err := db.Exec(`UPDATE eth_txes SET meta = ? WHERE id = ?`, meta, etx.ID).Error
+		err := db.Exec(`UPDATE eth_txes SET pipeline_task_run_id = ?, min_confirmations = ? WHERE id = ?`, &tr.ID, minConfirmations, etx.ID).Error
 		require.NoError(t, err)
 
 		err = ec.ResumePendingTaskRuns(context.Background(), head)
@@ -2335,11 +2326,7 @@ func TestEthConfirmer_ResumePendingRuns(t *testing.T) {
 		attempt := etx.EthTxAttempts[0]
 		receipt := cltest.MustInsertEthReceipt(t, db, head.Number-minConfirmations, head.Hash, attempt.Hash)
 
-		meta := bulletprooftxmanager.EthTxMeta{
-			PipelineTaskRunID: &tr.ID,
-			MinConfirmations:  cnull.Uint32From(uint32(minConfirmations)),
-		}
-		err = db.Exec(`UPDATE eth_txes SET meta = ? WHERE id = ?`, meta, etx.ID).Error
+		err = db.Exec(`UPDATE eth_txes SET pipeline_task_run_id = ?, min_confirmations = ? WHERE id = ?`, &tr.ID, minConfirmations, etx.ID).Error
 		require.NoError(t, err)
 
 		go func() {
