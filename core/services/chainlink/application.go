@@ -177,7 +177,15 @@ func NewApplication(cfg config.GeneralConfig, advisoryLocker postgres.AdvisoryLo
 		logger.Fatal(err)
 	}
 
-	chainCollection, err := evm.LoadChainCollection(globalLogger, db, cfg, keyStore.Eth(), advisoryLocker, eventBroadcaster)
+	ccOpts := evm.ChainCollectionOpts{
+		Config:           cfg,
+		Logger:           globalLogger,
+		DB:               db,
+		KeyStore:         keyStore.Eth(),
+		AdvisoryLocker:   advisoryLocker,
+		EventBroadcaster: eventBroadcaster,
+	}
+	chainCollection, err := evm.LoadChainCollection(ccOpts)
 	if err != nil {
 		logger.Fatal(err)
 	}

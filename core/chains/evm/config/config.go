@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/pkg/errors"
 	"github.com/smartcontractkit/chainlink/core/assets"
+	evmtypes "github.com/smartcontractkit/chainlink/core/chains/evm/types"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/store/config"
 	ocr "github.com/smartcontractkit/libocr/offchainreporting"
@@ -24,7 +26,6 @@ type EVMOnlyConfig interface {
 	BlockHistoryEstimatorBlockDelay() uint16
 	BlockHistoryEstimatorBlockHistorySize() uint16
 	BlockHistoryEstimatorTransactionPercentile() uint16
-	ChainID() *big.Int
 	EthTxReaperInterval() time.Duration
 	EthTxReaperThreshold() time.Duration
 	EthTxResendAfterThreshold() time.Duration
@@ -68,19 +69,21 @@ var _ ChainScopedConfig = &chainScopedConfig{}
 
 type chainScopedConfig struct {
 	config.GeneralConfig
-	orm        *chainScopedConfigORM
-	defaultSet chainSpecificConfigDefaultSet
-	id         *big.Int
+	orm          *chainScopedConfigORM
+	persistedCfg evmtypes.ChainCfg
+	defaultSet   chainSpecificConfigDefaultSet
+	id           *big.Int
+	persistMu    sync.RWMutex
 }
 
-func NewChainScopedConfig(db *gorm.DB, gcfg config.GeneralConfig, chainID *big.Int) ChainScopedConfig {
-	orm := &chainScopedConfigORM{chainID, db}
-	defaultSet, exists := chainSpecificConfigDefaultSets[chainID.Int64()]
+func NewChainScopedConfig(db *gorm.DB, gcfg config.GeneralConfig, chain evmtypes.Chain) ChainScopedConfig {
+	orm := &chainScopedConfigORM{chain.ID.ToInt(), db}
+	defaultSet, exists := chainSpecificConfigDefaultSets[chain.ID.ToInt().Int64()]
 	if !exists {
-		logger.Warnf("No chain-specific configuration found for chain %d, falling back to defaults", chainID)
+		logger.Warnf("No chain-specific configuration found for chain %d, falling back to defaults", chain.ID.ToInt())
 		defaultSet = fallbackDefaultSet
 	}
-	css := chainScopedConfig{gcfg, orm, defaultSet, chainID}
+	css := chainScopedConfig{gcfg, orm, chain.Cfg, defaultSet, chain.ID.ToInt(), sync.RWMutex{}}
 	return &css
 }
 
@@ -140,8 +143,10 @@ func (c *chainScopedConfig) validate() (err error) {
 	return err
 }
 
-func (c *chainScopedConfig) ChainID() *big.Int {
-	return c.id
+func (c *chainScopedConfig) getPersistedCfg() evmtypes.ChainCfg {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.persistedCfg
 }
 
 // NOTE: The ENV vars used below will be removed after multichain is merged,
@@ -177,6 +182,9 @@ func (c *chainScopedConfig) EvmGasBumpWei() *big.Int {
 	if ok {
 		return val.(*big.Int)
 	}
+	if c.persistedCfg.EvmGasBumpWei != nil {
+		return c.persistedCfg.EvmGasBumpWei
+	}
 	n := c.defaultSet.gasBumpWei
 	return &n
 }
@@ -199,6 +207,9 @@ func (c *chainScopedConfig) EvmMaxGasPriceWei() *big.Int {
 	if ok {
 		return val.(*big.Int)
 	}
+	if c.persistedCfg.EvmMaxGasPriceWei != nil {
+		return c.persistedCfg.EvmMaxGasPriceWei
+	}
 	n := c.defaultSet.maxGasPriceWei
 	return &n
 }
@@ -209,7 +220,7 @@ func (c *chainScopedConfig) EvmMaxGasPriceWei() *big.Int {
 // 0 value disables
 func (c *chainScopedConfig) EvmMaxQueuedTransactions() uint64 {
 	val, ok := lookupEnv("ETH_MAX_QUEUED_TRANSACTIONS", config.ParseUint64)
-	if ok {
+	nf ok {
 		return val.(uint64)
 	}
 	return c.defaultSet.maxQueuedTransactions
@@ -232,6 +243,9 @@ func (c *chainScopedConfig) EvmGasLimitDefault() uint64 {
 	if ok {
 		return val.(uint64)
 	}
+	if c.persistedCfg.EvmGasLimitDefault.Valid {
+		return uint64(c.persistedCfg.EvmGasLimitDefault.Int64)
+	}
 	return c.defaultSet.gasLimitDefault
 }
 
@@ -246,15 +260,14 @@ func (c *chainScopedConfig) EvmGasLimitTransfer() uint64 {
 
 // EvmGasPriceDefault is the starting gas price for every transaction
 func (c *chainScopedConfig) EvmGasPriceDefault() *big.Int {
-	var value big.Int
-	if err := c.orm.load("EvmGasPriceDefault", &value); err == nil {
-		return &value
-	} else {
-		logger.Warnw("Error while trying to fetch EvmGasPriceDefault.", "error", err)
-	}
 	val, ok := lookupEnv("ETH_GAS_PRICE_DEFAULT", config.ParseBigInt)
 	if ok {
 		return val.(*big.Int)
+	}
+	c.persistMu.RLock()
+	defer c.persistMu.RLock()
+	if c.persistedCfg.EvmGasPriceDefault != nil {
+		return c.persistedCfg.EvmGasPriceDefault.ToInt()
 	}
 	n := c.defaultSet.gasPriceDefault
 	return &n
@@ -270,6 +283,9 @@ func (c *chainScopedConfig) SetEvmGasPriceDefault(value *big.Int) error {
 	if value.Cmp(max) > 0 {
 		return errors.Errorf("cannot set default gas price to %s, it is above the maximum allowed value of %s", value.String(), max.String())
 	}
+	c.persistMu.Lock()
+	defer c.persistMu.Unlock()
+	c.persistedCfg.EvmGasPriceDefault = value
 	// HACK: For now we do this manual cast which is less than ideal, but will
 	// be replaced with chain-specific configs in a followup PR
 	return c.orm.store("EvmGasPriceDefault", value)
@@ -300,6 +316,9 @@ func (c *chainScopedConfig) EvmFinalityDepth() uint {
 	if ok {
 		return val.(uint)
 	}
+	if c.persistedCfg.EvmFinalityDepth.Valid {
+		return uint(c.persistedCfg.EvmFinalityDepth.Int64)
+	}
 	return c.defaultSet.finalityDepth
 }
 
@@ -312,6 +331,9 @@ func (c *chainScopedConfig) EvmHeadTrackerHistoryDepth() uint {
 	if ok {
 		return val.(uint)
 	}
+	if c.persistedCfg.EvmHeadTrackerHistoryDepth.Valid {
+		return uint(c.persistedCfg.EvmHeadTrackerHistoryDepth.Int64)
+	}
 	return c.defaultSet.headTrackerHistoryDepth
 }
 
@@ -321,6 +343,9 @@ func (c *chainScopedConfig) EvmHeadTrackerSamplingInterval() time.Duration {
 	val, ok := lookupEnv("ETH_HEAD_TRACKER_SAMPLING_INTERVAL", config.ParseDuration)
 	if ok {
 		return val.(time.Duration)
+	}
+	if c.persistedCfg.EvmHeadTrackerSamplingInterval != nil {
+		return *c.persistedCfg.EvmHeadTrackerSamplingInterval
 	}
 	return c.defaultSet.headTrackerSamplingInterval
 }
@@ -341,6 +366,9 @@ func (c *chainScopedConfig) EthTxResendAfterThreshold() time.Duration {
 	val, ok := lookupEnv("ETH_TX_RESEND_AFTER_THRESHOLD", config.ParseDuration)
 	if ok {
 		return val.(time.Duration)
+	}
+	if c.persistedCfg.EthTxResendAfterThreshold != nil {
+		return c.persistedCfg.EthTxResendAfterThreshold.Duration()
 	}
 	return c.defaultSet.ethTxResendAfterThreshold
 }
@@ -372,6 +400,9 @@ func (c *chainScopedConfig) BlockHistoryEstimatorBlockDelay() uint16 {
 	if ok {
 		return val.(uint16)
 	}
+	if c.persistedCfg.BlockHistoryEstimatorBlockDelay.Valid {
+		return uint16(c.persistedCfg.BlockHistoryEstimatorBlockDelay.Int64)
+	}
 	return c.defaultSet.blockHistoryEstimatorBlockDelay
 }
 
@@ -381,6 +412,9 @@ func (c *chainScopedConfig) BlockHistoryEstimatorBlockHistorySize() uint16 {
 	val, ok := lookupEnv("BLOCK_HISTORY_ESTIMATOR_BLOCK_HISTORY_SIZE", config.ParseUint16)
 	if ok {
 		return val.(uint16)
+	}
+	if c.persistedCfg.BlockHistoryEstimatorBlockHistorySize.Valid {
+		return uint16(c.persistedCfg.BlockHistoryEstimatorBlockHistorySize.Int64)
 	}
 	return c.defaultSet.blockHistoryEstimatorBlockHistorySize
 }
@@ -404,6 +438,9 @@ func (c *chainScopedConfig) GasEstimatorMode() string {
 	val, ok := lookupEnv("GAS_ESTIMATOR_MODE", config.ParseString)
 	if ok {
 		return val.(string)
+	}
+	if c.persistedCfg.GasEstimatorMode.Valid {
+		return c.persistedCfg.GasEstimatorMode.String
 	}
 	return c.defaultSet.gasEstimatorMode
 }
@@ -452,6 +489,9 @@ func (c *chainScopedConfig) MinRequiredOutgoingConfirmations() uint64 {
 	if ok {
 		return val.(uint64)
 	}
+	if c.persistedCfg.MinRequiredOutgoingConfirmations.Valid {
+		return uint64(c.persistedCfg.MinRequiredOutgoingConfirmations.Int64)
+	}
 	return c.defaultSet.minRequiredOutgoingConfirmations
 }
 
@@ -471,6 +511,9 @@ func (c *chainScopedConfig) EvmGasBumpTxDepth() uint16 {
 	val, ok := lookupEnv("ETH_GAS_BUMP_TX_DEPTH", config.ParseUint16)
 	if ok {
 		return val.(uint16)
+	}
+	if c.persistedCfg.EvmGasBumpTxDepth.Valid {
+		return uint16(c.persistedCfg.EvmGasBumpTxDepth.Int64)
 	}
 	return c.defaultSet.gasBumpTxDepth
 }
@@ -492,6 +535,9 @@ func (c *chainScopedConfig) EvmGasBumpPercent() uint16 {
 	if ok {
 		return val.(uint16)
 	}
+	if c.persistedCfg.EvmGasBumpPercent.Valid {
+		return uint16(c.persistedCfg.EvmGasBumpPercent.Int64)
+	}
 	return c.defaultSet.gasBumpPercent
 }
 
@@ -500,6 +546,9 @@ func (c *chainScopedConfig) EvmNonceAutoSync() bool {
 	val, ok := lookupEnv("ETH_NONCE_AUTO_SYNC", config.ParseBool)
 	if ok {
 		return val.(bool)
+	}
+	if c.persistedCfg.EvmNonceAutoSync.Valid {
+		return c.persistedCfg.EvmNonceAutoSync.Bool
 	}
 	return c.defaultSet.nonceAutoSync
 }
@@ -515,6 +564,9 @@ func (c *chainScopedConfig) EvmGasLimitMultiplier() float32 {
 	if ok {
 		return val.(float32)
 	}
+	if c.persistedCfg.EvmGasLimitMultiplier.Valid {
+		return float32(c.persistedCfg.EvmGasLimitMultiplier.Float64)
+	}
 	return c.defaultSet.gasLimitMultiplier
 }
 
@@ -526,6 +578,9 @@ func (c *chainScopedConfig) EvmHeadTrackerMaxBufferSize() uint {
 	val, ok := lookupEnv("ETH_HEAD_TRACKER_MAX_BUFFER_SIZE", config.ParseUint64)
 	if ok {
 		return uint(val.(uint64))
+	}
+	if c.persistedCfg.EvmHeadTrackerMaxBufferSize.Valid {
+		return uint(c.persistedCfg.EvmHeadTrackerMaxBufferSize.Int64)
 	}
 	return c.defaultSet.headTrackerMaxBufferSize
 }
@@ -562,6 +617,9 @@ func (c *chainScopedConfig) EvmLogBackfillBatchSize() uint32 {
 	if ok {
 		return val.(uint32)
 	}
+	if c.persistedCfg.EvmLogBackfillBatchSize.Valid {
+		return uint32(c.persistedCfg.EvmLogBackfillBatchSize.Int64)
+	}
 	return c.defaultSet.logBackfillBatchSize
 }
 
@@ -572,6 +630,9 @@ func (c *chainScopedConfig) EvmRPCDefaultBatchSize() uint32 {
 	if ok {
 		return val.(uint32)
 	}
+	if c.persistedCfg.EvmRPCDefaultBatchSize.Valid {
+		return uint32(c.persistedCfg.EvmRPCDefaultBatchSize.Int64)
+	}
 	return c.defaultSet.rpcDefaultBatchSize
 }
 
@@ -580,6 +641,9 @@ func (c *chainScopedConfig) FlagsContractAddress() string {
 	val, ok := lookupEnv("FLAGS_CONTRACT_ADDRESS", config.ParseString)
 	if ok {
 		return val.(string)
+	}
+	if c.persistedCfg.FlagsContractAddress.Valid {
+		return c.persistedCfg.FlagsContractAddress.String
 	}
 	return c.defaultSet.flagsContractAddress
 }

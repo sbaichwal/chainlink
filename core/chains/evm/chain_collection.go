@@ -4,9 +4,11 @@ import (
 	"math/big"
 
 	"github.com/pkg/errors"
+	evmconfig "github.com/smartcontractkit/chainlink/core/chains/evm/config"
 	"github.com/smartcontractkit/chainlink/core/chains/evm/types"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/service"
+	"github.com/smartcontractkit/chainlink/core/services/eth"
 	"github.com/smartcontractkit/chainlink/core/services/keystore"
 	"github.com/smartcontractkit/chainlink/core/services/postgres"
 	"github.com/smartcontractkit/chainlink/core/store/config"
@@ -84,20 +86,38 @@ func (cll *chainCollection) ChainCount() int {
 	return len(cll.chains)
 }
 
-func LoadChainCollection(globalLogger *logger.Logger, db *gorm.DB, gcfg config.GeneralConfig, keyStore keystore.EthKeyStoreInterface, advisoryLocker postgres.AdvisoryLocker, eventBroadcaster postgres.EventBroadcaster) (ChainCollection, error) {
+type ChainCollectionOpts struct {
+	Config           config.GeneralConfig
+	Logger           *logger.Logger
+	DB               *gorm.DB
+	KeyStore         keystore.EthKeyStoreInterface
+	AdvisoryLocker   postgres.AdvisoryLocker
+	EventBroadcaster postgres.EventBroadcaster
+
+	// Gen-functions are useful for dependency injection by tests
+	GenEthClient func(types.Chain) eth.Client
+	GenConfig    func(types.Chain) evmconfig.ChainScopedConfig
+}
+
+func LoadChainCollection(opts ChainCollectionOpts) (ChainCollection, error) {
 	// TODO: Rename to something like EVMDisabled?
-	if gcfg.EthereumDisabled() {
+	if opts.Config.EthereumDisabled() {
 		logger.Info("ChainCollection: Ethereum disabled, no chains will be loaded")
 		return &chainCollection{}, nil
 	}
 	var dbchains []types.Chain
-	err := db.Preload("Nodes").Find(&dbchains).Error
+	err := opts.DB.Preload("Nodes").Find(&dbchains).Error
 	if err != nil {
 		return nil, err
 	}
-	cll := &chainCollection{gcfg.DefaultChainID(), make(map[string]*chain)}
+	return NewChainCollection(opts, dbchains)
+}
+
+func NewChainCollection(opts ChainCollectionOpts, dbchains []types.Chain) (ChainCollection, error) {
+	var err error
+	cll := &chainCollection{opts.Config.DefaultChainID(), make(map[string]*chain)}
 	for i := range dbchains {
-		chain, err2 := newChain(dbchains[i], globalLogger, db, gcfg, keyStore, advisoryLocker, eventBroadcaster)
+		chain, err2 := newChain(dbchains[i], opts)
 		if err2 != nil {
 			err = multierr.Combine(err, err2)
 			continue

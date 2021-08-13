@@ -1,11 +1,56 @@
 package types
 
 import (
+	"database/sql/driver"
+	"encoding/json"
+	"errors"
 	"math/big"
 
+	"github.com/smartcontractkit/chainlink/core/store/models"
 	"github.com/smartcontractkit/chainlink/core/utils"
 	null "gopkg.in/guregu/null.v4"
 )
+
+// t.Setenv("ETH_GAS_PRICE_DEFAULT", fmt.Sprintf("%d", initialDefaultGasPrice))
+// t.Setenv("GAS_ESTIMATOR_MODE", "BlockHistory")
+// t.Setenv("BLOCK_HISTORY_ESTIMATOR_BLOCK_DELAY", "0")
+// t.Setenv("BLOCK_HISTORY_ESTIMATOR_BLOCK_HISTORY_SIZE", "2")
+// // Limit the headtracker backfill depth just so we aren't here all week
+// t.Setenv("ETH_FINALITY_DEPTH", "3")
+type ChainCfg struct {
+	BlockHistoryEstimatorBlockDelay       null.Int
+	BlockHistoryEstimatorBlockHistorySize null.Int
+	EthTxResendAfterThreshold             *models.Duration
+	EvmFinalityDepth                      null.Int
+	EvmGasBumpPercent                     null.Int
+	EvmGasBumpTxDepth                     null.Int
+	EvmGasBumpWei                         *utils.Big
+	EvmGasLimitDefault                    null.Int
+	EvmGasLimitMultiplier                 null.Float
+	EvmGasPriceDefault                    *utils.Big
+	EvmHeadTrackerHistoryDepth            null.Int
+	EvmHeadTrackerMaxBufferSize           null.Int
+	EvmHeadTrackerSamplingInterval        *models.Duration
+	EvmLogBackfillBatchSize               null.Int
+	EvmMaxGasPriceWei                     *utils.Big
+	EvmNonceAutoSync                      null.Bool
+	EvmRPCDefaultBatchSize                null.Int
+	FlagsContractAddress                  null.String
+	GasEstimatorMode                      null.String
+	MinRequiredOutgoingConfirmations      null.Int
+}
+
+func (c *ChainCfg) Scan(value interface{}) error {
+	b, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed")
+	}
+
+	return json.Unmarshal(b, c)
+}
+func (c ChainCfg) Value() (driver.Value, error) {
+	return json.Marshal(c)
+}
 
 // TODO: Rename this to just 'Chain' and figure out what to do with the other model
 type Chain struct {
@@ -13,6 +58,7 @@ type Chain struct {
 	// TODO: Add a name here?
 	Nodes []Node `gorm:"->"`
 	// TODO: Add a config here which can read from database overrides but defaults to the default chain config
+	Cfg ChainCfg
 }
 
 func (Chain) TableName() string {

@@ -17,12 +17,9 @@ import (
 	httypes "github.com/smartcontractkit/chainlink/core/services/headtracker/types"
 	"github.com/smartcontractkit/chainlink/core/services/keystore"
 	"github.com/smartcontractkit/chainlink/core/services/log"
-	"github.com/smartcontractkit/chainlink/core/services/postgres"
-	"github.com/smartcontractkit/chainlink/core/store/config"
 	"github.com/smartcontractkit/chainlink/core/utils"
 	"go.uber.org/multierr"
 	"go.uber.org/zap"
-	"gorm.io/gorm"
 )
 
 type ChainIdentification interface {
@@ -34,7 +31,6 @@ type ChainIdentification interface {
 type Chain interface {
 	service.Service
 	ChainIdentification
-	Ready() error
 	ID() *big.Int
 	Client() eth.Client
 	Config() evmconfig.ChainScopedConfig
@@ -48,7 +44,7 @@ var _ Chain = &chain{}
 
 type chain struct {
 	utils.StartStopOnce
-	chain           types.Chain
+	id              *big.Int
 	cfg             evmconfig.ChainScopedConfig
 	client          eth.Client
 	txm             bulletprooftxmanager.TxManager
@@ -60,29 +56,41 @@ type chain struct {
 	keyStore        keystore.EthKeyStoreInterface
 }
 
-func newChain(dbchain types.Chain, globalLogger *logger.Logger, db *gorm.DB, gcfg config.GeneralConfig, keyStore keystore.EthKeyStoreInterface, advisoryLocker postgres.AdvisoryLocker, eventBroadcaster postgres.EventBroadcaster) (*chain, error) {
-	if gcfg.EthereumDisabled() {
+func newChain(dbchain types.Chain, opts ChainCollectionOpts) (*chain, error) {
+	var cfg evmconfig.ChainScopedConfig
+	if opts.GenConfig == nil {
+		cfg = evmconfig.NewChainScopedConfig(opts.DB, opts.Config, dbchain)
+	} else {
+		cfg = opts.GenConfig(dbchain)
+	}
+	if cfg.EthereumDisabled() {
 		return nil, errors.Errorf("cannot create new chain with ID %d, ethereum is disabled", dbchain.ID.ToInt())
 	}
-	cfg := evmconfig.NewChainScopedConfig(db, gcfg, dbchain.ID.ToInt())
+	db := opts.DB
 	// TODO: Pass this logger into all subservices
-	l := globalLogger.With("chainID", dbchain.ID.String())
-	serviceLogLevels, err := globalLogger.GetServiceLogLevels()
+	l := opts.Logger.With("chainID", dbchain.ID.String())
+	serviceLogLevels, err := opts.Logger.GetServiceLogLevels()
 	if err != nil {
 		return nil, err
 	}
-	client, err := newEthClientFromChain(dbchain)
-	if err != nil {
-		return nil, err
+	var client eth.Client
+	if opts.GenEthClient == nil {
+		var err error
+		client, err = newEthClientFromChain(dbchain)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		client = opts.GenEthClient(dbchain)
 	}
-	headTrackerLogger, err := globalLogger.InitServiceLevelLogger(logger.HeadTracker, serviceLogLevels[logger.HeadTracker])
+	headTrackerLogger, err := opts.Logger.InitServiceLevelLogger(logger.HeadTracker, serviceLogLevels[logger.HeadTracker])
 	if err != nil {
 		return nil, err
 	}
 	headBroadcaster := headtracker.NewHeadBroadcaster()
 	orm := headtracker.NewORM(db, *dbchain.ID.ToInt())
 	headTracker := headtracker.NewHeadTracker(headTrackerLogger, client, cfg, orm, headBroadcaster)
-	txm := bulletprooftxmanager.NewBulletproofTxManager(db, client, cfg, keyStore, advisoryLocker, eventBroadcaster)
+	txm := bulletprooftxmanager.NewBulletproofTxManager(db, client, cfg, opts.KeyStore, opts.AdvisoryLocker, opts.EventBroadcaster)
 
 	// Highest seen head height is used as part of the start of LogBroadcaster backfill range
 	highestSeenHead, err2 := headTracker.HighestSeenHeadFromDB()
@@ -92,7 +100,7 @@ func newChain(dbchain types.Chain, globalLogger *logger.Logger, db *gorm.DB, gcf
 
 	var balanceMonitor services.BalanceMonitor
 	if cfg.BalanceMonitorEnabled() {
-		balanceMonitor = services.NewBalanceMonitor(db, client, keyStore)
+		balanceMonitor = services.NewBalanceMonitor(db, client, opts.KeyStore)
 	}
 
 	logBroadcaster := log.NewBroadcaster(log.NewORM(db), client, cfg, highestSeenHead)
@@ -106,7 +114,7 @@ func newChain(dbchain types.Chain, globalLogger *logger.Logger, db *gorm.DB, gcf
 
 	c := chain{
 		utils.StartStopOnce{},
-		dbchain,
+		dbchain.ID.ToInt(),
 		cfg,
 		client,
 		txm,
@@ -115,7 +123,7 @@ func newChain(dbchain types.Chain, globalLogger *logger.Logger, db *gorm.DB, gcf
 		headTracker,
 		logBroadcaster,
 		balanceMonitor,
-		keyStore,
+		opts.KeyStore,
 	}
 	return &c, nil
 }
@@ -185,7 +193,7 @@ func (c *chain) Close() error {
 		return merr
 	})
 }
-func (c *chain) ID() *big.Int                              { return c.chain.ID.ToInt() }
+func (c *chain) ID() *big.Int                              { return c.id }
 func (c *chain) Client() eth.Client                        { return c.client }
 func (c *chain) Config() evmconfig.ChainScopedConfig       { return c.cfg }
 func (c *chain) LogBroadcaster() log.Broadcaster           { return c.logBroadcaster }
@@ -193,9 +201,9 @@ func (c *chain) HeadBroadcaster() httypes.HeadBroadcaster  { return c.headBroadc
 func (c *chain) TxManager() bulletprooftxmanager.TxManager { return c.txm }
 func (c *chain) HeadTracker() httypes.Tracker              { return c.headTracker }
 
-func (c *chain) IsL2() bool       { return c.chain.IsL2() }
-func (c *chain) IsArbitrum() bool { return c.chain.IsArbitrum() }
-func (c *chain) IsOptimism() bool { return c.chain.IsOptimism() }
+func (c *chain) IsL2() bool       { return types.IsL2(c.id) }
+func (c *chain) IsArbitrum() bool { return types.IsArbitrum(c.id) }
+func (c *chain) IsOptimism() bool { return types.IsOptimism(c.id) }
 
 func newEthClientFromChain(chain types.Chain) (eth.Client, error) {
 	nodes := chain.Nodes

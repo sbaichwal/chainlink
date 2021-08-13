@@ -17,30 +17,9 @@ var (
 	MinimumContractPayment = assets.NewLink(100)
 )
 
+// TODO: Take these overrides and use them as ChainCfg
+// MARK MARK MARK
 type ChainScopedConfigOverrides struct {
-	EvmLogBackfillBatchSize null.Int
-
-	BlockHistoryEstimatorBlockDelay       null.Int
-	BlockHistoryEstimatorBlockHistorySize null.Int
-	EvmFinalityDepth                      null.Int
-	EvmMaxGasPriceWei                     *big.Int
-	EvmGasBumpPercent                     null.Int
-	EvmGasBumpTxDepth                     null.Int
-
-	EvmGasLimitDefault null.Int
-
-	EvmHeadTrackerHistoryDepth       null.Int
-	EvmGasBumpWei                    *big.Int
-	EvmGasLimitMultiplier            null.Float
-	EvmGasPriceDefault               *big.Int
-	EvmHeadTrackerSamplingInterval   *time.Duration
-	EvmHeadTrackerMaxBufferSize      null.Int
-	EthTxResendAfterThreshold        *time.Duration
-	EvmNonceAutoSync                 null.Bool
-	EvmRPCDefaultBatchSize           null.Int
-	FlagsContractAddress             null.String
-	GasEstimatorMode                 null.String
-	MinRequiredOutgoingConfirmations null.Int
 }
 
 // TestChainScopedConfig defaults to whatever config.NewChainScopedConfig()
@@ -63,9 +42,6 @@ func NewTestChainScopedConfig(t testing.TB, generalcfg *configtest.TestGeneralCo
 }
 
 func (c *TestChainScopedConfig) GasEstimatorMode() string {
-	if c.Overrides.GasEstimatorMode.Valid {
-		return c.Overrides.GasEstimatorMode.String
-	}
 	return "FixedPrice"
 }
 
