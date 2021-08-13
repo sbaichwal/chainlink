@@ -63,9 +63,6 @@ func (cll *chainCollection) Get(id *big.Int) (Chain, error) {
 	}
 	c, exists := cll.chains[id.String()]
 	if exists {
-		if err := c.Ready(); err != nil {
-			return nil, errors.Wrapf(err, "chain with ID %d is not ready", id)
-		}
 		return c, nil
 	}
 	return nil, errors.Errorf("chain not found with id %d", id)
@@ -112,11 +109,13 @@ func LoadChainCollection(opts ChainCollectionOpts) (ChainCollection, error) {
 	if err := opts.DB.Find(&nodes).Error; err != nil {
 		return nil, err
 	}
-	// HACK: For some reason gorm can't handle utils.Big foreign keys, so just
-	// manually assign here instead
+	// HACK: gorm can't handle non-comparable foreign keys (utils.Big cannot be
+	// used with ==), so preloading is not possible. Just manually assign here
+	// instead
 	for i, c := range dbchains {
 		for _, n := range nodes {
 			if n.EVMChainID.ToInt().Cmp(c.ID.ToInt()) == 0 {
+				// Performance note: quadratic
 				dbchains[i].Nodes = append(dbchains[i].Nodes, n)
 			}
 		}

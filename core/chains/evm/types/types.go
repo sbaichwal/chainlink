@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math/big"
+	"time"
 
 	"github.com/smartcontractkit/chainlink/core/store/models"
 	"github.com/smartcontractkit/chainlink/core/utils"
@@ -53,9 +54,11 @@ func (c ChainCfg) Value() (driver.Value, error) {
 }
 
 type Chain struct {
-	ID    utils.Big `gorm:"primary_key"`
-	Nodes []Node    `gorm:"->;foreignKey:EVMChainID;references:ID"`
-	Cfg   ChainCfg
+	ID        utils.Big `gorm:"primary_key"`
+	Nodes     []Node    `gorm:"->;foreignKey:EVMChainID;references:ID"`
+	Cfg       ChainCfg
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (Chain) TableName() string {
@@ -95,4 +98,6 @@ type Node struct {
 	WSURL      string      `gorm:"column:ws_url"`
 	HTTPURL    null.String `gorm:"column:http_url"`
 	SendOnly   bool
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }

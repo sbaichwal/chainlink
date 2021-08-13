@@ -302,10 +302,11 @@ func TestIntegration_MultiwordV2(t *testing.T) {
 	// Simulate a consumer contract calling to obtain ETH quotes in 3 different currencies
 	// in a single callback.
 	config := cltest.NewTestGeneralConfig(t)
+	config.Overrides.DefaultChainID = big.NewInt(1337)
+	config.Overrides.SetTriggerFallbackDBPollInterval(100 * time.Millisecond)
 	user, _, operatorAddress, _, consumerContract, operatorContract, b := setupMultiWordContracts(t)
 	app, cleanup := cltest.NewApplicationWithConfigAndKeyOnSimulatedBlockchain(t, config, b)
 	defer cleanup()
-	config.Overrides.SetTriggerFallbackDBPollInterval(100 * time.Millisecond)
 	t.Setenv("ETH_HEAD_TRACKER_MAX_BUFFER_SIZE", "100")
 
 	sendingKeys, err := app.KeyStore.Eth().SendingKeys()

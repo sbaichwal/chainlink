@@ -183,6 +183,8 @@ func NewApplication(opts ApplicationOpts) (Application, error) {
 		}
 	}
 
+	// TODO: Pull this up out of applicaton
+	// mark mark mark
 	ccOpts := evm.ChainCollectionOpts{
 		Config:           cfg,
 		Logger:           globalLogger,
@@ -193,7 +195,6 @@ func NewApplication(opts ApplicationOpts) (Application, error) {
 	}
 	chainCollection, err := evm.LoadChainCollection(ccOpts)
 	if err != nil {
-		fmt.Printf("BALLS %v\n", err)
 		logger.Fatal(err)
 	}
 	subservices = append(subservices, chainCollection)

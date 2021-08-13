@@ -10,6 +10,7 @@ import (
 	"github.com/smartcontractkit/chainlink/core/store/config"
 	"github.com/smartcontractkit/chainlink/core/utils"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func verifyMatchingChainIDs(t testing.TB, n *big.Int, m *big.Int) {
@@ -45,6 +46,12 @@ func NewChainCollection(t testing.TB, testopts TestChainOpts) evm.ChainCollectio
 
 func MustGetDefaultChain(t testing.TB, cc evm.ChainCollection) evm.Chain {
 	chain, err := cc.Default()
+	require.NoError(t, err)
+	return chain
+}
+
+func MustInsertChainWithNode(t testing.TB, db *gorm.DB, chain evmtypes.Chain) evmtypes.Chain {
+	err := db.Create(&chain).Error
 	require.NoError(t, err)
 	return chain
 }

@@ -40,6 +40,7 @@ import (
 	"github.com/smartcontractkit/chainlink/core/auth"
 	"github.com/smartcontractkit/chainlink/core/chains/evm"
 	evmconfig "github.com/smartcontractkit/chainlink/core/chains/evm/config"
+	evmtypes "github.com/smartcontractkit/chainlink/core/chains/evm/types"
 	"github.com/smartcontractkit/chainlink/core/cmd"
 	"github.com/smartcontractkit/chainlink/core/gracefulpanic"
 	"github.com/smartcontractkit/chainlink/core/internal/gethwrappers/generated/flux_aggregator_wrapper"
@@ -75,6 +76,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/smartcontractkit/chainlink/core/internal/testutils/configtest"
+	"github.com/smartcontractkit/chainlink/core/internal/testutils/evmtest"
 	// Force import of pgtest to ensure that txdb is registered as a DB driver
 	_ "github.com/smartcontractkit/chainlink/core/internal/testutils/pgtest"
 )
@@ -365,13 +367,15 @@ func NewApplicationWithConfig(t testing.TB, c *configtest.TestGeneralConfig, fla
 	var advisoryLocker postgres.AdvisoryLocker = &postgres.NullAdvisoryLocker{}
 	var externalInitiatorManager webhook.ExternalInitiatorManager = &webhook.NullExternalInitiatorManager{}
 	var useRealExternalInitiatorManager bool
-
+	var chainToInsert evmtypes.Chain
 	for _, flag := range flagsAndDeps {
 		switch dep := flag.(type) {
 		case postgres.AdvisoryLocker:
 			advisoryLocker = dep
 		case webhook.ExternalInitiatorManager:
 			externalInitiatorManager = dep
+		case evmtypes.Chain:
+			chainToInsert = dep
 		default:
 			switch flag {
 			case UseRealExternalInitiatorManager:
@@ -384,6 +388,11 @@ func NewApplicationWithConfig(t testing.TB, c *configtest.TestGeneralConfig, fla
 	shutdownSignal := &testShutdownSignal{t}
 	store, err := strpkg.NewStore(c, advisoryLocker, shutdownSignal)
 	require.NoError(t, err)
+
+	if chainToInsert.ID.ToInt().Int64() != int64(0) {
+		evmtest.MustInsertChainWithNode(t, store.DB, chainToInsert)
+	}
+
 	ta := &TestApplication{t: t}
 	appInstance, err := chainlink.NewApplication(chainlink.ApplicationOpts{
 		Config:              c,
