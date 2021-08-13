@@ -118,11 +118,17 @@ type ChainlinkApplication struct {
 }
 
 type ApplicationOpts struct {
-	Config              config.GeneralConfig
-	AdvisoryLocker      postgres.AdvisoryLocker
-	ShutdownSignal      gracefulpanic.Signal
-	Store               *strpkg.Store
-	ClobberNodesFromEnv bool
+	Config                   config.GeneralConfig
+	AdvisoryLocker           postgres.AdvisoryLocker
+	EventBroadcaster         postgres.EventBroadcaster
+	ShutdownSignal           gracefulpanic.Signal
+	Store                    *strpkg.Store
+	DB                       *gorm.DB
+	ClobberNodesFromEnv      bool
+	KeyStore                 *keystore.Master
+	ChainCollection          evm.ChainCollection
+	Logger                   *logger.Logger
+	ExternalInitiatorManager webhook.ExternalInitiatorManager
 }
 
 // NewApplication initializes a new store if one is not already
@@ -136,14 +142,14 @@ func NewApplication(opts ApplicationOpts) (Application, error) {
 	advisoryLocker := opts.AdvisoryLocker
 	store := opts.Store
 	shutdownSignal := opts.ShutdownSignal
-	db := store.DB
-
-	setupConfig(cfg, db)
+	db := opts.DB
+	keyStore := opts.KeyStore
+	chainCollection := opts.ChainCollection
+	globalLogger := opts.Logger
+	eventBroadcaster := opts.EventBroadcaster
+	externalInitiatorManager := opts.ExternalInitiatorManager
 
 	healthChecker := health.NewChecker()
-
-	scryptParams := utils.GetScryptParams(cfg)
-	keyStore := keystore.New(db, scryptParams)
 
 	telemetryIngressClient := synchronization.TelemetryIngressClient(&synchronization.NoopTelemetryIngressClient{})
 	explorerClient := synchronization.ExplorerClient(&synchronization.NoopExplorerClient{})
@@ -170,11 +176,6 @@ func NewApplication(opts ApplicationOpts) (Application, error) {
 		logger.Info("DatabaseBackup: periodic database backups are disabled. To enable automatic backups, set DATABASE_BACKUP_MODE=lite or DATABASE_BACKUP_MODE=full")
 	}
 
-	// Init service loggers
-	globalLogger := cfg.CreateProductionLogger()
-	globalLogger.SetDB(db)
-
-	eventBroadcaster := postgres.NewEventBroadcaster(cfg.DatabaseURL(), cfg.DatabaseListenerMinReconnectInterval(), cfg.DatabaseListenerMaxReconnectDuration())
 	subservices = append(subservices, eventBroadcaster)
 
 	if opts.ClobberNodesFromEnv {
@@ -183,20 +184,6 @@ func NewApplication(opts ApplicationOpts) (Application, error) {
 		}
 	}
 
-	// TODO: Pull this up out of applicaton
-	// mark mark mark
-	ccOpts := evm.ChainCollectionOpts{
-		Config:           cfg,
-		Logger:           globalLogger,
-		DB:               db,
-		KeyStore:         keyStore.Eth(),
-		AdvisoryLocker:   advisoryLocker,
-		EventBroadcaster: eventBroadcaster,
-	}
-	chainCollection, err := evm.LoadChainCollection(ccOpts)
-	if err != nil {
-		logger.Fatal(err)
-	}
 	subservices = append(subservices, chainCollection)
 	promReporter := services.NewPromReporter(postgres.MustSQLDB(db))
 	subservices = append(subservices, promReporter)
@@ -260,8 +247,6 @@ func NewApplication(opts ApplicationOpts) (Application, error) {
 	} else {
 		logger.Debug("Off-chain reporting disabled")
 	}
-
-	externalInitiatorManager := webhook.NewExternalInitiatorManager(db, utils.UnrestrictedClient)
 
 	var webhookJobRunner webhook.JobRunner
 	if cfg.Dev() || cfg.FeatureWebhookV2() {
@@ -345,11 +330,6 @@ func (app *ChainlinkApplication) SetServiceLogger(ctx context.Context, serviceNa
 	}
 
 	return app.logger.Orm.SetServiceLogLevel(ctx, serviceName, level)
-}
-
-func setupConfig(cfg config.GeneralConfig, db *gorm.DB) {
-	cfg.SetDB(db)
-
 }
 
 // Start all necessary services. If successful, nil will be returned.  Also

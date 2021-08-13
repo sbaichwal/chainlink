@@ -361,11 +361,17 @@ const (
 
 // NewApplicationWithConfig creates a New TestApplication with specified test config
 // TODO: Need some way to pass in a chain collection here
-func NewApplicationWithConfig(t testing.TB, c *configtest.TestGeneralConfig, flagsAndDeps ...interface{}) (*TestApplication, func()) {
+func NewApplicationWithConfig(t testing.TB, cfg *configtest.TestGeneralConfig, flagsAndDeps ...interface{}) (*TestApplication, func()) {
 	t.Helper()
 
 	var advisoryLocker postgres.AdvisoryLocker = &postgres.NullAdvisoryLocker{}
-	var externalInitiatorManager webhook.ExternalInitiatorManager = &webhook.NullExternalInitiatorManager{}
+	shutdownSignal := &testShutdownSignal{t}
+	store, err := strpkg.NewInsecureStore(cfg, advisoryLocker, shutdownSignal)
+	require.NoError(t, err)
+	db := store.DB
+
+	var externalInitiatorManager webhook.ExternalInitiatorManager
+	externalInitiatorManager = &webhook.NullExternalInitiatorManager{}
 	var useRealExternalInitiatorManager bool
 	var chainToInsert evmtypes.Chain
 	for _, flag := range flagsAndDeps {
@@ -379,34 +385,51 @@ func NewApplicationWithConfig(t testing.TB, c *configtest.TestGeneralConfig, fla
 		default:
 			switch flag {
 			case UseRealExternalInitiatorManager:
-				useRealExternalInitiatorManager = true
+				externalInitiatorManager = webhook.NewExternalInitiatorManager(db, utils.UnrestrictedClient)
 			}
 
 		}
 	}
 
-	shutdownSignal := &testShutdownSignal{t}
-	store, err := strpkg.NewStore(c, advisoryLocker, shutdownSignal)
-	require.NoError(t, err)
-
 	if chainToInsert.ID.ToInt().Int64() != int64(0) {
-		evmtest.MustInsertChainWithNode(t, store.DB, chainToInsert)
+		evmtest.MustInsertChainWithNode(t, db, chainToInsert)
+	}
+	keyStore := keystore.New(db, utils.FastScryptParams)
+	eventBroadcaster := &postgres.NullEventBroadcaster{}
+	logger := cfg.CreateProductionLogger()
+	chainCollection, err := evm.LoadChainCollection(evm.ChainCollectionOpts{
+		Config:           cfg,
+		Logger:           logger,
+		DB:               db,
+		KeyStore:         keyStore.Eth(),
+		AdvisoryLocker:   advisoryLocker,
+		EventBroadcaster: eventBroadcaster,
+		GenEthClient:     func(c types.Chain) eth.Client {},
+	})
+	if err != nil {
+		logger.Fatal(err)
 	}
 
 	ta := &TestApplication{t: t}
 	appInstance, err := chainlink.NewApplication(chainlink.ApplicationOpts{
-		Config:              c,
-		AdvisoryLocker:      advisoryLocker,
-		ShutdownSignal:      shutdownSignal,
-		Store:               store,
-		ClobberNodesFromEnv: false, // No need to clobber since the fixture already includes it
+		Config:                   cfg,
+		AdvisoryLocker:           advisoryLocker,
+		EventBroadcaster:         eventBroadcaster,
+		ShutdownSignal:           shutdownSignal,
+		Store:                    store,
+		DB:                       db,
+		ClobberNodesFromEnv:      false, // No need to clobber since the fixture already includes it
+		KeyStore:                 keyStore,
+		ChainCollection:          chainCollection,
+		Logger:                   logger,
+		ExternalInitiatorManager: externalInitiatorManager,
 	})
 	require.NoError(t, err)
 	app := appInstance.(*chainlink.ChainlinkApplication)
 	ta.ChainlinkApplication = app
 	server := newServer(ta)
 
-	c.Overrides.ClientNodeURL = null.StringFrom(server.URL)
+	cfg.Overrides.ClientNodeURL = null.StringFrom(server.URL)
 
 	if !useRealExternalInitiatorManager {
 		app.ExternalInitiatorManager = externalInitiatorManager

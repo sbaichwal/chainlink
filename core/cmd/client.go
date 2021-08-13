@@ -15,14 +15,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smartcontractkit/chainlink/core/chains/evm"
 	"github.com/smartcontractkit/chainlink/core/gracefulpanic"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/chainlink"
+	"github.com/smartcontractkit/chainlink/core/services/keystore"
 	"github.com/smartcontractkit/chainlink/core/services/postgres"
+	"github.com/smartcontractkit/chainlink/core/services/webhook"
 	"github.com/smartcontractkit/chainlink/core/store"
 	strpkg "github.com/smartcontractkit/chainlink/core/store"
 	"github.com/smartcontractkit/chainlink/core/store/config"
 	"github.com/smartcontractkit/chainlink/core/store/models"
+	"github.com/smartcontractkit/chainlink/core/utils"
 	"github.com/smartcontractkit/chainlink/core/web"
 
 	"github.com/gin-gonic/gin"
@@ -71,22 +75,47 @@ type AppFactory interface {
 type ChainlinkAppFactory struct{}
 
 // NewApplication returns a new instance of the node with the given config.
-func (n ChainlinkAppFactory) NewApplication(config config.GeneralConfig) (chainlink.Application, error) {
-	advisoryLock := postgres.NewAdvisoryLock(config.DatabaseURL())
+func (n ChainlinkAppFactory) NewApplication(cfg config.GeneralConfig) (chainlink.Application, error) {
+	advisoryLocker := postgres.NewAdvisoryLock(cfg.DatabaseURL())
+	shutdownSignal := gracefulpanic.NewSignal()
 	// TODO: Remove store entirely and pass db into NewApplication, see:
 	// https://app.clubhouse.io/chainlinklabs/story/12980/remove-store-object-entirely
-	shutdownSignal := gracefulpanic.NewSignal()
-	store, err := strpkg.NewStore(config, advisoryLock, shutdownSignal)
+	store, err := strpkg.NewStore(cfg, advisoryLocker, shutdownSignal)
 	if err != nil {
 		return nil, err
 	}
-
+	db := store.DB
+	cfg.SetDB(db)
+	keyStore := keystore.New(db, utils.GetScryptParams(cfg))
+	// Init service loggers
+	globalLogger := cfg.CreateProductionLogger()
+	globalLogger.SetDB(db)
+	eventBroadcaster := postgres.NewEventBroadcaster(cfg.DatabaseURL(), cfg.DatabaseListenerMinReconnectInterval(), cfg.DatabaseListenerMaxReconnectDuration())
+	ccOpts := evm.ChainCollectionOpts{
+		Config:           cfg,
+		Logger:           globalLogger,
+		DB:               db,
+		KeyStore:         keyStore.Eth(),
+		AdvisoryLocker:   advisoryLocker,
+		EventBroadcaster: eventBroadcaster,
+	}
+	chainCollection, err := evm.LoadChainCollection(ccOpts)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	externalInitiatorManager := webhook.NewExternalInitiatorManager(db, utils.UnrestrictedClient)
 	return chainlink.NewApplication(chainlink.ApplicationOpts{
-		Config:              config,
-		AdvisoryLocker:      advisoryLock,
-		ShutdownSignal:      shutdownSignal,
-		Store:               store,
-		ClobberNodesFromEnv: true,
+		Config:                   cfg,
+		AdvisoryLocker:           advisoryLocker,
+		ShutdownSignal:           shutdownSignal,
+		Store:                    store,
+		DB:                       db,
+		ClobberNodesFromEnv:      true,
+		KeyStore:                 keyStore,
+		ChainCollection:          chainCollection,
+		EventBroadcaster:         eventBroadcaster,
+		Logger:                   globalLogger,
+		ExternalInitiatorManager: externalInitiatorManager,
 	})
 }
 
