@@ -15,10 +15,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/smartcontractkit/chainlink/core/gracefulpanic"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/chainlink"
 	"github.com/smartcontractkit/chainlink/core/services/postgres"
 	"github.com/smartcontractkit/chainlink/core/store"
+	strpkg "github.com/smartcontractkit/chainlink/core/store"
 	"github.com/smartcontractkit/chainlink/core/store/config"
 	"github.com/smartcontractkit/chainlink/core/store/models"
 	"github.com/smartcontractkit/chainlink/core/web"
@@ -71,7 +73,21 @@ type ChainlinkAppFactory struct{}
 // NewApplication returns a new instance of the node with the given config.
 func (n ChainlinkAppFactory) NewApplication(config config.GeneralConfig) (chainlink.Application, error) {
 	advisoryLock := postgres.NewAdvisoryLock(config.DatabaseURL())
-	return chainlink.NewApplication(config, advisoryLock)
+	// TODO: Remove store entirely and pass db into NewApplication, see:
+	// https://app.clubhouse.io/chainlinklabs/story/12980/remove-store-object-entirely
+	shutdownSignal := gracefulpanic.NewSignal()
+	store, err := strpkg.NewStore(config, advisoryLock, shutdownSignal)
+	if err != nil {
+		return nil, err
+	}
+
+	return chainlink.NewApplication(chainlink.ApplicationOpts{
+		Config:              config,
+		AdvisoryLocker:      advisoryLock,
+		ShutdownSignal:      shutdownSignal,
+		Store:               store,
+		ClobberNodesFromEnv: true,
+	})
 }
 
 // Runner implements the Run method.

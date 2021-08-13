@@ -28,12 +28,14 @@ import (
 	uuid "github.com/satori/go.uuid"
 	"github.com/smartcontractkit/chainlink/core/assets"
 	"github.com/smartcontractkit/chainlink/core/auth"
+	evmtypes "github.com/smartcontractkit/chainlink/core/chains/evm/types"
 	"github.com/smartcontractkit/chainlink/core/internal/cltest"
 	"github.com/smartcontractkit/chainlink/core/internal/cltest/heavyweight"
 	"github.com/smartcontractkit/chainlink/core/internal/gethwrappers/generated/link_token_interface"
 	"github.com/smartcontractkit/chainlink/core/internal/gethwrappers/generated/multiwordconsumer_wrapper"
 	"github.com/smartcontractkit/chainlink/core/internal/gethwrappers/generated/operator_wrapper"
 	"github.com/smartcontractkit/chainlink/core/internal/testutils/configtest"
+	"github.com/smartcontractkit/chainlink/core/internal/testutils/evmtest"
 	"github.com/smartcontractkit/chainlink/core/services/gas"
 	"github.com/smartcontractkit/chainlink/core/services/job"
 	"github.com/smartcontractkit/chainlink/core/services/keystore/keys/ocrkey"
@@ -756,20 +758,24 @@ func TestIntegration_BlockHistoryEstimator(t *testing.T) {
 	var initialDefaultGasPrice int64 = 5000000000
 
 	c := cltest.NewTestGeneralConfig(t)
-	t.Setenv("ETH_GAS_PRICE_DEFAULT", fmt.Sprintf("%d", initialDefaultGasPrice))
-	t.Setenv("GAS_ESTIMATOR_MODE", "BlockHistory")
-	t.Setenv("BLOCK_HISTORY_ESTIMATOR_BLOCK_DELAY", "0")
-	t.Setenv("BLOCK_HISTORY_ESTIMATOR_BLOCK_HISTORY_SIZE", "2")
-	// Limit the headtracker backfill depth just so we aren't here all week
-	t.Setenv("ETH_FINALITY_DEPTH", "3")
+	// t.Setenv("ETH_GAS_PRICE_DEFAULT", fmt.Sprintf("%d", initialDefaultGasPrice))
+	// t.Setenv("GAS_ESTIMATOR_MODE", "BlockHistory")
+	// t.Setenv("BLOCK_HISTORY_ESTIMATOR_BLOCK_DELAY", "0")
+	// t.Setenv("BLOCK_HISTORY_ESTIMATOR_BLOCK_HISTORY_SIZE", "2")
+	// // Limit the headtracker backfill depth just so we aren't here all week
+	// t.Setenv("ETH_FINALITY_DEPTH", "3")
 
 	ethClient, sub, assertMocksCalled := cltest.NewEthMocks(t)
 	defer assertMocksCalled()
 	chchNewHeads := make(chan chan<- *models.Head, 1)
 
-	cc, cleanup := evmtest.NewChainCollection(t, config, ethClient)
-	// app, cleanup := cltest.NewApplicationWithConfigAndKey(t, c, ethClient)
-	defer cleanup()
+	cc := evmtest.NewChainCollection(t, evmtest.TestChainOpts{ethClient, c, evmtypes.ChainCfg{
+		EvmGasPriceDefault:                    utils.NewBigI(initialDefaultGasPrice),
+		GasEstimatorMode:                      null.StringFrom("BlockHistory"),
+		BlockHistoryEstimatorBlockDelay:       null.IntFrom(0),
+		BlockHistoryEstimatorBlockHistorySize: null.IntFrom(2),
+		EvmFinalityDepth:                      null.IntFrom(3),
+	}})
 
 	b41 := gas.Block{
 		Number:       41,
@@ -816,7 +822,7 @@ func TestIntegration_BlockHistoryEstimator(t *testing.T) {
 	ethClient.On("ChainID", mock.Anything).Return(c.DefaultChainID(), nil)
 	ethClient.On("BalanceAt", mock.Anything, mock.Anything, mock.Anything).Maybe().Return(oneETH.ToInt(), nil)
 
-	require.NoError(t, app.Start())
+	require.NoError(t, cc.Start())
 	var newHeads chan<- *models.Head
 	select {
 	case newHeads = <-chchNewHeads:
@@ -824,12 +830,13 @@ func TestIntegration_BlockHistoryEstimator(t *testing.T) {
 		t.Fatal("timed out waiting for app to subscribe")
 	}
 
-	estimator := app.TxManager.GetGasEstimator()
+	chain := evmtest.MustGetDefaultChain(t, cc)
+	estimator := chain.TxManager().GetGasEstimator()
 	gasPrice, gasLimit, err := estimator.EstimateGas(nil, 500000)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(500000), gasLimit)
 	assert.Equal(t, "41500000000", gasPrice.String())
-	assert.Equal(t, initialDefaultGasPrice, c.EvmGasPriceDefault().Int64()) // unchanged
+	assert.Equal(t, initialDefaultGasPrice, chain.Config().EvmGasPriceDefault().Int64()) // unchanged
 
 	// BlockHistoryEstimator new blocks
 	ethClient.On("BatchCallContext", mock.Anything, mock.MatchedBy(func(b []rpc.BatchElem) bool {
@@ -859,8 +866,10 @@ func TestIntegration_BlockHistoryEstimator(t *testing.T) {
 func triggerAllKeys(t *testing.T, app *cltest.TestApplication) {
 	keys, err := app.KeyStore.Eth().SendingKeys()
 	require.NoError(t, err)
-	for _, k := range keys {
-		app.TxManager.Trigger(k.Address.Address())
+	for _, chain := range app.GetChainCollection().Chains() {
+		for _, k := range keys {
+			chain.TxManager().Trigger(k.Address.Address())
+		}
 	}
 }
 
@@ -896,7 +905,4 @@ func finiteTicker(period time.Duration, onTick func()) func() {
 		tick.Stop()
 		close(chStop)
 	}
-}
-
-func newIntegrationApplication(t *testing.T) (app *cltest.TestApplication, cleanup func()) {
 }

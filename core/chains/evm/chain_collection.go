@@ -1,10 +1,10 @@
 package evm
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/pkg/errors"
-	evmconfig "github.com/smartcontractkit/chainlink/core/chains/evm/config"
 	"github.com/smartcontractkit/chainlink/core/chains/evm/types"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/service"
@@ -96,7 +96,6 @@ type ChainCollectionOpts struct {
 
 	// Gen-functions are useful for dependency injection by tests
 	GenEthClient func(types.Chain) eth.Client
-	GenConfig    func(types.Chain) evmconfig.ChainScopedConfig
 }
 
 func LoadChainCollection(opts ChainCollectionOpts) (ChainCollection, error) {
@@ -106,9 +105,21 @@ func LoadChainCollection(opts ChainCollectionOpts) (ChainCollection, error) {
 		return &chainCollection{}, nil
 	}
 	var dbchains []types.Chain
-	err := opts.DB.Preload("Nodes").Find(&dbchains).Error
-	if err != nil {
+	var nodes []types.Node
+	if err := opts.DB.Find(&dbchains).Error; err != nil {
 		return nil, err
+	}
+	if err := opts.DB.Find(&nodes).Error; err != nil {
+		return nil, err
+	}
+	// HACK: For some reason gorm can't handle utils.Big foreign keys, so just
+	// manually assign here instead
+	for i, c := range dbchains {
+		for _, n := range nodes {
+			if n.EVMChainID.ToInt().Cmp(c.ID.ToInt()) == 0 {
+				dbchains[i].Nodes = append(dbchains[i].Nodes, n)
+			}
+		}
 	}
 	return NewChainCollection(opts, dbchains)
 }
@@ -117,6 +128,8 @@ func NewChainCollection(opts ChainCollectionOpts, dbchains []types.Chain) (Chain
 	var err error
 	cll := &chainCollection{opts.Config.DefaultChainID(), make(map[string]*chain)}
 	for i := range dbchains {
+		fmt.Println("BALLS chain", i, dbchains[i])
+		fmt.Println("BALLS chain.node", i, dbchains[i].Nodes)
 		chain, err2 := newChain(dbchains[i], opts)
 		if err2 != nil {
 			err = multierr.Combine(err, err2)

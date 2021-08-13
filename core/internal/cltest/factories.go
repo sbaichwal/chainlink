@@ -26,7 +26,6 @@ import (
 	"github.com/smartcontractkit/chainlink/core/assets"
 	"github.com/smartcontractkit/chainlink/core/auth"
 	"github.com/smartcontractkit/chainlink/core/internal/gethwrappers/generated/flux_aggregator_wrapper"
-	"github.com/smartcontractkit/chainlink/core/internal/testutils/evmconfigtest"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/bulletprooftxmanager"
 	"github.com/smartcontractkit/chainlink/core/services/job"
@@ -45,6 +44,10 @@ import (
 	"gopkg.in/guregu/null.v4"
 	"gorm.io/datatypes"
 	"gorm.io/gorm"
+)
+
+var (
+	DefaultMinimumContractPayment = assets.NewLink(100)
 )
 
 // NewAddress return a random new address
@@ -182,7 +185,7 @@ func StringToVersionedLogData20190207withoutIndexes(
 	requestID := hexutil.MustDecode(StringToHash(internalID).Hex())
 	buf.Write(requestID)
 
-	payment := hexutil.MustDecode(evmconfigtest.MinimumContractPayment.ToHash().Hex())
+	payment := hexutil.MustDecode(DefaultMinimumContractPayment.ToHash().Hex())
 	buf.Write(payment)
 
 	callbackAddr := utils.EVMWordUint64(0)
@@ -619,8 +622,8 @@ func NewRoundStateForRoundID(store *strpkg.Store, roundID uint32, latestSubmissi
 		RoundId:          roundID,
 		EligibleToSubmit: true,
 		LatestSubmission: latestSubmission,
-		AvailableFunds:   evmconfigtest.MinimumContractPayment.ToInt(),
-		PaymentAmount:    evmconfigtest.MinimumContractPayment.ToInt(),
+		AvailableFunds:   DefaultMinimumContractPayment.ToInt(),
+		PaymentAmount:    DefaultMinimumContractPayment.ToInt(),
 	}
 }
 

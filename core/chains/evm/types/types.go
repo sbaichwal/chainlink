@@ -52,13 +52,10 @@ func (c ChainCfg) Value() (driver.Value, error) {
 	return json.Marshal(c)
 }
 
-// TODO: Rename this to just 'Chain' and figure out what to do with the other model
 type Chain struct {
-	ID utils.Big `gorm:"primary_key"`
-	// TODO: Add a name here?
-	Nodes []Node `gorm:"->"`
-	// TODO: Add a config here which can read from database overrides but defaults to the default chain config
-	Cfg ChainCfg
+	ID    utils.Big `gorm:"primary_key"`
+	Nodes []Node    `gorm:"->;foreignKey:EVMChainID;references:ID"`
+	Cfg   ChainCfg
 }
 
 func (Chain) TableName() string {
@@ -93,7 +90,7 @@ func IsL2(id *big.Int) bool {
 type Node struct {
 	ID         int32 `gorm:"primary_key"`
 	Name       string
-	EVMChain   Chain       `gorm:"foreignkey:EVMChainID"`
+	EVMChain   Chain
 	EVMChainID utils.Big   `gorm:"column:evm_chain_id"`
 	WSURL      string      `gorm:"column:ws_url"`
 	HTTPURL    null.String `gorm:"column:http_url"`

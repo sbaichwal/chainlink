@@ -57,12 +57,7 @@ type chain struct {
 }
 
 func newChain(dbchain types.Chain, opts ChainCollectionOpts) (*chain, error) {
-	var cfg evmconfig.ChainScopedConfig
-	if opts.GenConfig == nil {
-		cfg = evmconfig.NewChainScopedConfig(opts.DB, opts.Config, dbchain)
-	} else {
-		cfg = opts.GenConfig(dbchain)
-	}
+	cfg := evmconfig.NewChainScopedConfig(opts.DB, opts.Config, dbchain)
 	if cfg.EthereumDisabled() {
 		return nil, errors.Errorf("cannot create new chain with ID %d, ethereum is disabled", dbchain.ID.ToInt())
 	}

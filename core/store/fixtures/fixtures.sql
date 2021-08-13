@@ -36,7 +36,7 @@ INSERT INTO users (email, hashed_password, token_secret, created_at, updated_at)
 INSERT INTO evm_chains (id, created_at, updated_at) VALUES (0, NOW(), NOW());
 
 INSERT INTO nodes (name, evm_chain_id, ws_url, http_url, send_only, created_at, updated_at) VALUES (
-    'primary-0',
+    'eth-test-ws-only-0',
     0,
     'ws://example.invalid',
     null,

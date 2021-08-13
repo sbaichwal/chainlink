@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -14,6 +15,7 @@ import (
 
 	evmconfig "github.com/smartcontractkit/chainlink/core/chains/evm/config"
 	"github.com/smartcontractkit/chainlink/core/cmd"
+	"github.com/smartcontractkit/chainlink/core/gracefulpanic"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/chainlink"
 	"github.com/smartcontractkit/chainlink/core/services/keystore"
@@ -465,4 +467,19 @@ type MockPasswordPrompter struct {
 
 func (m MockPasswordPrompter) Prompt() string {
 	return m.Password
+}
+
+var _ gracefulpanic.Signal = &testShutdownSignal{}
+
+type testShutdownSignal struct {
+	t testing.TB
+}
+
+func (tss *testShutdownSignal) Panic() {
+	tss.t.Errorf("panic: %s", debug.Stack())
+	panic("panic")
+}
+
+func (tss *testShutdownSignal) Wait() <-chan struct{} {
+	return make(chan struct{})
 }

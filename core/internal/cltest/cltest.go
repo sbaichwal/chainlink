@@ -381,8 +381,17 @@ func NewApplicationWithConfig(t testing.TB, c *configtest.TestGeneralConfig, fla
 		}
 	}
 
+	shutdownSignal := &testShutdownSignal{t}
+	store, err := strpkg.NewStore(c, advisoryLocker, shutdownSignal)
+	require.NoError(t, err)
 	ta := &TestApplication{t: t}
-	appInstance, err := chainlink.NewApplication(c, advisoryLocker)
+	appInstance, err := chainlink.NewApplication(chainlink.ApplicationOpts{
+		Config:              c,
+		AdvisoryLocker:      advisoryLocker,
+		ShutdownSignal:      shutdownSignal,
+		Store:               store,
+		ClobberNodesFromEnv: false, // No need to clobber since the fixture already includes it
+	})
 	require.NoError(t, err)
 	app := appInstance.(*chainlink.ChainlinkApplication)
 	ta.ChainlinkApplication = app

@@ -117,21 +117,25 @@ type ChainlinkApplication struct {
 	startStopMu sync.Mutex
 }
 
+type ApplicationOpts struct {
+	Config              config.GeneralConfig
+	AdvisoryLocker      postgres.AdvisoryLocker
+	ShutdownSignal      gracefulpanic.Signal
+	Store               *strpkg.Store
+	ClobberNodesFromEnv bool
+}
+
 // NewApplication initializes a new store if one is not already
 // present at the configured root directory (default: ~/.chainlink),
 // the logger at the same directory and returns the Application to
 // be used by the node.
 // TODO: Inject more dependencies here to save booting up useless stuff in tests
-func NewApplication(cfg config.GeneralConfig, advisoryLocker postgres.AdvisoryLocker) (Application, error) {
+func NewApplication(opts ApplicationOpts) (Application, error) {
 	var subservices []service.Service
-
-	// TODO: Remove store entirely and pass db into NewApplication, see:
-	// https://app.clubhouse.io/chainlinklabs/story/12980/remove-store-object-entirely
-	shutdownSignal := gracefulpanic.NewSignal()
-	store, err := strpkg.NewStore(cfg, advisoryLocker, shutdownSignal)
-	if err != nil {
-		return nil, err
-	}
+	cfg := opts.Config
+	advisoryLocker := opts.AdvisoryLocker
+	store := opts.Store
+	shutdownSignal := opts.ShutdownSignal
 	db := store.DB
 
 	setupConfig(cfg, db)
@@ -173,8 +177,10 @@ func NewApplication(cfg config.GeneralConfig, advisoryLocker postgres.AdvisoryLo
 	eventBroadcaster := postgres.NewEventBroadcaster(cfg.DatabaseURL(), cfg.DatabaseListenerMinReconnectInterval(), cfg.DatabaseListenerMaxReconnectDuration())
 	subservices = append(subservices, eventBroadcaster)
 
-	if err := evm.ClobberNodesFromEnv(db, cfg); err != nil {
-		logger.Fatal(err)
+	if opts.ClobberNodesFromEnv {
+		if err := evm.ClobberNodesFromEnv(db, cfg); err != nil {
+			logger.Fatal(err)
+		}
 	}
 
 	ccOpts := evm.ChainCollectionOpts{
@@ -187,6 +193,7 @@ func NewApplication(cfg config.GeneralConfig, advisoryLocker postgres.AdvisoryLo
 	}
 	chainCollection, err := evm.LoadChainCollection(ccOpts)
 	if err != nil {
+		fmt.Printf("BALLS %v\n", err)
 		logger.Fatal(err)
 	}
 	subservices = append(subservices, chainCollection)

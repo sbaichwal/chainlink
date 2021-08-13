@@ -7,6 +7,8 @@ import (
 	"github.com/smartcontractkit/chainlink/core/chains/evm"
 	evmtypes "github.com/smartcontractkit/chainlink/core/chains/evm/types"
 	"github.com/smartcontractkit/chainlink/core/services/eth"
+	"github.com/smartcontractkit/chainlink/core/store/config"
+	"github.com/smartcontractkit/chainlink/core/utils"
 	"github.com/stretchr/testify/require"
 )
 
@@ -15,8 +17,9 @@ func verifyMatchingChainIDs(t testing.TB, n *big.Int, m *big.Int) {
 }
 
 type TestChainOpts struct {
-	Client eth.Client
-	Config evmtypes.ChainCfg
+	Client        eth.Client
+	GeneralConfig config.GeneralConfig
+	ChainCfg      evmtypes.ChainCfg
 }
 
 // NewChainCollection returns a simple chain collection with one chain and
@@ -25,22 +28,25 @@ func NewChainCollection(t testing.TB, testopts TestChainOpts) evm.ChainCollectio
 	opts := evm.ChainCollectionOpts{}
 
 	opts.GenEthClient = func(c evmtypes.Chain) eth.Client {
-		verifyMatchingChainIDs(t, c.ID.ToInt(), testopts.Config.DefaultChainID())
 		return testopts.Client
-	}
-	opts.GenConfig = func(c evmtypes.Chain) eth.Client {
-		verifyMatchingChainIDs(t, c.ID.ToInt(), testopts.Config.DefaultChainID())
-		return testopts.Config
 	}
 
 	chains := []evmtypes.Chain{
 		{
-			ID:  0,
-			Cfg: evmtypes.ChainCfg,
+			ID:  *utils.NewBigI(0),
+			Cfg: testopts.ChainCfg,
 		},
 	}
 
-	return evm.NewChainCollection(opts)
+	cc, err := evm.NewChainCollection(opts, chains)
+	require.NoError(t, err)
+	return cc
+}
+
+func MustGetDefaultChain(t testing.TB, cc evm.ChainCollection) evm.Chain {
+	chain, err := cc.Default()
+	require.NoError(t, err)
+	return chain
 }
 
 // evm.NewChainCollection(opts , dbchains []types.Chain) (ChainCollection, error) {
