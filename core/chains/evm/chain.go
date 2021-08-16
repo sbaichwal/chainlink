@@ -61,6 +61,9 @@ func newChain(dbchain types.Chain, opts ChainCollectionOpts) (*chain, error) {
 	if cfg.EthereumDisabled() {
 		return nil, errors.Errorf("cannot create new chain with ID %d, ethereum is disabled", dbchain.ID.ToInt())
 	}
+	if err := cfg.Validate(); err != nil {
+		return nil, errors.Wrapf(err, "cannot create new chain with ID %d, config validation failed", dbchain.ID.ToInt())
+	}
 	db := opts.DB
 	// TODO: Pass this logger into all subservices
 	l := opts.Logger.With("chainID", dbchain.ID.String())

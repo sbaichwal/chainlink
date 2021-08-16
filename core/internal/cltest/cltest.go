@@ -399,7 +399,7 @@ func NewApplicationWithConfig(t testing.TB, cfg *configtest.TestGeneralConfig, f
 		evmtest.MustInsertChainWithNode(t, db, chainToInsert)
 	}
 	keyStore := keystore.New(db, utils.FastScryptParams)
-	eventBroadcaster := &postgres.NullEventBroadcaster{}
+	eventBroadcaster := postgres.NewNullEventBroadcaster()
 	logger := cfg.CreateProductionLogger()
 	chainCollection, err := evm.LoadChainCollection(evm.ChainCollectionOpts{
 		Config:           cfg,
@@ -493,7 +493,7 @@ func NewEthMocksWithStartupAssertions(t testing.TB) (*mocks.Client, *mocks.Subsc
 	c.On("SubscribeNewHead", mock.Anything, mock.Anything).Maybe().Return(EmptyMockSubscription(), nil)
 	c.On("SendTransaction", mock.Anything, mock.Anything).Maybe().Return(nil)
 	c.On("HeadByNumber", mock.Anything, (*big.Int)(nil)).Maybe().Return(Head(0), nil)
-	c.On("ChainID", mock.Anything).Maybe().Return(big.NewInt(eth.NullClientChainID), nil)
+	c.On("ChainID").Maybe().Return(*big.NewInt(eth.NullClientChainID))
 
 	block := types.NewBlockWithHeader(&types.Header{
 		Number: big.NewInt(100),

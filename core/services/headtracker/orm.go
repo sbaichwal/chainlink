@@ -31,7 +31,7 @@ func (orm *ORM) IdempotentInsertHead(ctx context.Context, h models.Head) error {
 	err := orm.db.
 		WithContext(ctx).
 		Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "hash"}},
+			Columns:   []clause.Column{{Name: "evm_chain_id"}, {Name: "hash"}},
 			DoNothing: true,
 		}).Create(&h).Error
 
