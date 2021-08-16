@@ -397,9 +397,13 @@ func TestClient_GetConfiguration(t *testing.T) {
 }
 
 func TestClient_RunOCRJob_HappyPath(t *testing.T) {
+	t.Setenv("GAS_ESTIMATOR_MODE", "FixedPrice")
+
 	t.Parallel()
 
-	app := startNewApplication(t)
+	app := startNewApplication(t, withConfigSet(func(c *configtest.TestGeneralConfig) {
+		c.Overrides.EthereumDisabled = null.BoolFrom(false)
+	}))
 	client, _ := app.NewClientAndRenderer()
 
 	_, bridge := cltest.NewBridgeType(t, "voter_turnout", "http://blah.com")

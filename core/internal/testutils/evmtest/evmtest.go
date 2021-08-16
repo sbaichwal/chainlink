@@ -56,90 +56,10 @@ func MustInsertChainWithNode(t testing.TB, db *gorm.DB, chain evmtypes.Chain) ev
 	return chain
 }
 
-// evm.NewChainCollection(opts , dbchains []types.Chain) (ChainCollection, error) {
-//     name := uuid.NewV4().String()
-//     chainID := rand.Int63()
-//     wsURL := "ws://example.invalid"
-
-//     c := MockChain
-
-//     cll := evm.NewChainCollection()
-// }
-
-// INSERT INTO evm_chains (id, created_at, updated_at) VALUES (0, NOW(), NOW());
-
-// INSERT INTO nodes (name, evm_chain_id, ws_url, http_url, send_only, created_at, updated_at) VALUES (
-//     'primary-0',
-//     0,
-//
-//     null,
-//     false,
-//     NOW(),
-//     NOW()
-// );
-
-// var _ evm.Chain = &MockChain{}
-
-// type MockChain struct{}
-
-// // Start the service.
-// func (c *MockChain) Start() error {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// // Stop the Service.
-// // Invariants: Usually after this call the Service cannot be started
-// // again, you need to build a new Service to do so.
-// func (c *MockChain) Close() error {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// // Checkables should return nil if ready, or an error message otherwise.
-// func (c *MockChain) Ready() error {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// // Checkables should return nil if healthy, or an error message otherwise.
-// func (c *MockChain) Healthy() error {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) IsL2() bool {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) IsArbitrum() bool {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) IsOptimism() bool {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) ID() *big.Int {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) Client() eth.Client {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) Config() evmconfig.ChainScopedConfig {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) LogBroadcaster() log.Broadcaster {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) HeadBroadcaster() httypes.HeadBroadcaster {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) TxManager() bulletprooftxmanager.TxManager {
-//     panic("not implemented") // TODO: Implement
-// }
-
-// func (c *MockChain) HeadTracker() httypes.Tracker {
-//     panic("not implemented") // TODO: Implement
-// }
+func MustSetChainCfg(t testing.TB, db *gorm.DB, chainID *big.Int, chainCfg evmtypes.ChainCfg) {
+	res := db.Exec(`UPDATE evm_chains SET cfg = ? WHERE id = ?`, chainCfg, chainID.String())
+	if res.RowsAffected == 0 {
+		t.Fatal("no chains updated")
+	}
+	require.NoError(t, res.Error)
+}

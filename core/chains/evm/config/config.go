@@ -159,6 +159,8 @@ func (c *chainScopedConfig) ChainID() *big.Int {
 // announce a new head, then route a request to a different node which does not
 // have this head yet.
 func (c *chainScopedConfig) EvmBalanceMonitorBlockDelay() uint16 {
+	// FIXME: Can we move the env vars back onto GeneralConfig? This way we can avoid having to use t.Setenv
+	// mark mark mark
 	val, ok := lookupEnv("ETH_BALANCE_MONITOR_BLOCK_DELAY", config.ParseUint16)
 	if ok {
 		return val.(uint16)
