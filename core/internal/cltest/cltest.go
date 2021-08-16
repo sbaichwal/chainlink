@@ -364,6 +364,8 @@ const (
 func NewApplicationWithConfig(t testing.TB, cfg *configtest.TestGeneralConfig, flagsAndDeps ...interface{}) (*TestApplication, func()) {
 	t.Helper()
 
+	var ethClient eth.Client = &eth.NullClient{}
+
 	var advisoryLocker postgres.AdvisoryLocker = &postgres.NullAdvisoryLocker{}
 	shutdownSignal := &testShutdownSignal{t}
 	store, err := strpkg.NewInsecureStore(cfg, advisoryLocker, shutdownSignal)
@@ -376,6 +378,8 @@ func NewApplicationWithConfig(t testing.TB, cfg *configtest.TestGeneralConfig, f
 	var chainToInsert evmtypes.Chain
 	for _, flag := range flagsAndDeps {
 		switch dep := flag.(type) {
+		case eth.Client:
+			ethClient = dep
 		case postgres.AdvisoryLocker:
 			advisoryLocker = dep
 		case webhook.ExternalInitiatorManager:
@@ -404,7 +408,13 @@ func NewApplicationWithConfig(t testing.TB, cfg *configtest.TestGeneralConfig, f
 		KeyStore:         keyStore.Eth(),
 		AdvisoryLocker:   advisoryLocker,
 		EventBroadcaster: eventBroadcaster,
-		GenEthClient:     func(c types.Chain) eth.Client {},
+		GenEthClient: func(c evmtypes.Chain) eth.Client {
+			cid := ethClient.ChainID()
+			if (&cid).Cmp(cfg.DefaultChainID()) != 0 {
+				t.Fatalf("expected eth client ChainID %d to match configured DefaultChainID %d", &cid, cfg.DefaultChainID())
+			}
+			return ethClient
+		},
 	})
 	if err != nil {
 		logger.Fatal(err)
