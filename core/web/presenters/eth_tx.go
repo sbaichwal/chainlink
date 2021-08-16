@@ -1,6 +1,7 @@
 package presenters
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -37,6 +38,7 @@ func (EthTxResource) GetName() string {
 // EthTx as the id being used was the EthTxAttempt Hash.
 // This should really use it's proper id
 func NewEthTxResource(tx bulletprooftxmanager.EthTx) EthTxResource {
+	fmt.Println("BALLS tx", tx.EVMChainID.String())
 	return EthTxResource{
 		Data:       hexutil.Bytes(tx.EncodedPayload),
 		From:       &tx.FromAddress,
@@ -56,6 +58,8 @@ func NewEthTxResourceFromAttempt(txa bulletprooftxmanager.EthTxAttempt) EthTxRes
 	r.GasPrice = txa.GasPrice.String()
 	r.Hash = txa.Hash
 	r.Hex = hexutil.Encode(txa.SignedRawTx)
+	r.EVMChainID = txa.EthTx.EVMChainID
+	fmt.Println("BALLS txa", tx.EVMChainID.String())
 
 	if tx.Nonce != nil {
 		r.Nonce = strconv.FormatUint(uint64(*tx.Nonce), 10)

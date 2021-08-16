@@ -55,10 +55,15 @@ func startNewApplication(t *testing.T, setup ...func(opts *startOptions)) *cltes
 
 	// Setup config
 	config := cltest.NewTestGeneralConfig(t)
-	// TODO: Chain cfg?
-	// config.Overrides.EvmNonceAutoSync = null.BoolFrom(false)
 	config.Overrides.SetDefaultHTTPTimeout(30 * time.Millisecond)
 	config.Overrides.DefaultMaxHTTPAttempts = null.IntFrom(1)
+
+	// Generally speaking, most tests that use startNewApplication don't
+	// actually need ChainCollections loaded. We can greatly reduce test
+	// overhead by setting ETHEREUM_DISABLED here. If you need EVM interactions
+	// in your tests, you can manually override and turn it on using
+	// withConfigSet.
+	config.Overrides.EthereumDisabled = null.BoolFrom(true)
 
 	if sopts.SetConfig != nil {
 		sopts.SetConfig(config)
@@ -512,7 +517,9 @@ func (FailingAuthenticator) Authenticate(sessionRequest models.SessionRequest) (
 func TestClient_SetLogConfig(t *testing.T) {
 	t.Parallel()
 
-	app := startNewApplication(t)
+	app := startNewApplication(t, withConfigSet(func(c *configtest.TestGeneralConfig) {
+		c.Overrides.EthereumDisabled = null.BoolFrom(true)
+	}))
 	client, _ := app.NewClientAndRenderer()
 
 	logLevel := "warn"

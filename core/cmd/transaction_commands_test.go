@@ -61,7 +61,7 @@ func TestClient_ShowTransaction(t *testing.T) {
 	set := flag.NewFlagSet("test get tx", 0)
 	set.Parse([]string{attempt.Hash.Hex()})
 	c := cli.NewContext(nil, set, nil)
-	assert.NoError(t, client.ShowTransaction(c))
+	require.NoError(t, client.ShowTransaction(c))
 
 	renderedTx := *r.Renders[0].(*cmd.EthTxPresenter)
 	assert.Equal(t, &tx.FromAddress, renderedTx.From)
@@ -83,7 +83,7 @@ func TestClient_IndexTxAttempts(t *testing.T) {
 	set.Int("page", 1, "doc")
 	c := cli.NewContext(nil, set, nil)
 	require.Equal(t, 1, c.Int("page"))
-	assert.NoError(t, client.IndexTxAttempts(c))
+	require.NoError(t, client.IndexTxAttempts(c))
 
 	renderedAttempts := *r.Renders[0].(*cmd.EthTxPresenters)
 	require.Len(t, tx.EthTxAttempts, 1)

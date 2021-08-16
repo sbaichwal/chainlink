@@ -144,6 +144,8 @@ func ParsePaginatedResponseWithMeta(input []byte, resource interface{}, links *j
 }
 
 func parsePaginatedResponseToDocument(input []byte, resource interface{}, document *jsonapi.Document) error {
+	fmt.Println("BALLS", string(input))
+	fmt.Printf("BALLS %#v\n", resource)
 	err := ParseJSONAPIResponse(input, resource)
 	if err != nil {
 		return errors.Wrap(err, "ParseJSONAPIResponse error")
