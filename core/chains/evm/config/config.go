@@ -82,10 +82,9 @@ func NewChainScopedConfig(db *gorm.DB, gcfg config.GeneralConfig, chain evmtypes
 	orm := &chainScopedConfigORM{chain.ID.ToInt(), db}
 	defaultSet, exists := chainSpecificConfigDefaultSets[chain.ID.ToInt().Int64()]
 	if !exists {
-		logger.Warnf("No chain-specific configuration found for chain %d, falling back to defaults", chain.ID.ToInt())
+		logger.Warnf("Unrecognised chain %d, falling back to generic default configuration", chain.ID.ToInt())
 		defaultSet = fallbackDefaultSet
 	}
-	fmt.Println("BALLS", defaultSet.gasBumpPercent)
 	css := chainScopedConfig{gcfg, orm, chain.Cfg, defaultSet, chain.ID.ToInt(), sync.RWMutex{}}
 	return &css
 }

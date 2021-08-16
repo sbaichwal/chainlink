@@ -302,12 +302,15 @@ func TestIntegration_MultiwordV2(t *testing.T) {
 	// Simulate a consumer contract calling to obtain ETH quotes in 3 different currencies
 	// in a single callback.
 	config := cltest.NewTestGeneralConfig(t)
-	config.Overrides.DefaultChainID = big.NewInt(1337)
+	config.Overrides.DefaultChainID = big.NewInt(cltest.SimulatedBackendEVMChainID)
 	config.Overrides.SetTriggerFallbackDBPollInterval(100 * time.Millisecond)
 	user, _, operatorAddress, _, consumerContract, operatorContract, b := setupMultiWordContracts(t)
-	app, cleanup := cltest.NewApplicationWithConfigAndKeyOnSimulatedBlockchain(t, config, b)
+	simulatedBackendChain := evmtypes.Chain{
+		ID:  *utils.NewBigI(cltest.SimulatedBackendEVMChainID),
+		Cfg: evmtypes.ChainCfg{GasEstimatorMode: null.StringFrom("FixedPrice"), EvmHeadTrackerMaxBufferSize: null.IntFrom(100)},
+	}
+	app, cleanup := cltest.NewApplicationWithConfigAndKeyOnSimulatedBlockchain(t, config, b, simulatedBackendChain)
 	defer cleanup()
-	t.Setenv("ETH_HEAD_TRACKER_MAX_BUFFER_SIZE", "100")
 
 	sendingKeys, err := app.KeyStore.Eth().SendingKeys()
 	require.NoError(t, err)
@@ -423,7 +426,11 @@ func setupOCRContracts(t *testing.T) (*bind.TransactOpts, *backends.SimulatedBac
 func setupNode(t *testing.T, owner *bind.TransactOpts, port int, dbName string, b *backends.SimulatedBackend) (*cltest.TestApplication, string, common.Address, ocrkey.EncryptedKeyBundle, *configtest.TestGeneralConfig, func()) {
 	config, _, ormCleanup := heavyweight.FullTestORM(t, fmt.Sprintf("%s%d", dbName, port), true)
 
-	app, appCleanup := cltest.NewApplicationWithConfigAndKeyOnSimulatedBlockchain(t, config, b)
+	simulatedBackendChain := evmtypes.Chain{
+		ID:  *utils.NewBigI(cltest.SimulatedBackendEVMChainID),
+		Cfg: evmtypes.ChainCfg{GasEstimatorMode: null.StringFrom("FixedPrice"), EvmHeadTrackerMaxBufferSize: null.IntFrom(100)},
+	}
+	app, appCleanup := cltest.NewApplicationWithConfigAndKeyOnSimulatedBlockchain(t, config, b, simulatedBackendChain)
 	_, _, err := app.GetKeyStore().OCR().GenerateEncryptedP2PKey()
 	require.NoError(t, err)
 	p2pIDs := app.GetKeyStore().OCR().DecryptedP2PKeys()
@@ -433,7 +440,6 @@ func setupNode(t *testing.T, owner *bind.TransactOpts, port int, dbName string, 
 
 	config.Overrides.P2PPeerID = &peerID
 	config.Overrides.P2PListenPort = null.IntFrom(int64(port))
-	t.Setenv("ETH_HEAD_TRACKER_MAX_BUFFER_SIZE", "100")
 	config.Overrides.Dev = null.BoolFrom(true) // Disables ocr spec validation so we can have fast polling for the test.
 
 	sendingKeys, err := app.KeyStore.Eth().SendingKeys()

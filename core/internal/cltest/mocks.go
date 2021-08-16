@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"runtime/debug"
@@ -13,11 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/smartcontractkit/chainlink/core/chains/evm"
 	evmconfig "github.com/smartcontractkit/chainlink/core/chains/evm/config"
+	evmmocks "github.com/smartcontractkit/chainlink/core/chains/evm/mocks"
 	"github.com/smartcontractkit/chainlink/core/cmd"
 	"github.com/smartcontractkit/chainlink/core/gracefulpanic"
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/chainlink"
+	"github.com/smartcontractkit/chainlink/core/services/eth"
 	"github.com/smartcontractkit/chainlink/core/services/keystore"
 	"github.com/smartcontractkit/chainlink/core/store"
 	"github.com/smartcontractkit/chainlink/core/store/config"
@@ -140,7 +144,7 @@ type InstanceAppFactory struct {
 }
 
 // NewApplication creates a new application with specified config
-func (f InstanceAppFactory) NewApplication(config evmconfig.ChainScopedConfig) (chainlink.Application, error) {
+func (f InstanceAppFactory) NewApplication(config config.GeneralConfig) (chainlink.Application, error) {
 	return f.App, nil
 }
 
@@ -482,4 +486,14 @@ func (tss *testShutdownSignal) Panic() {
 
 func (tss *testShutdownSignal) Wait() <-chan struct{} {
 	return make(chan struct{})
+}
+
+func NewChainCollectionMockWithOneChain(t testing.TB, ethClient eth.Client, cfg evmconfig.ChainScopedConfig) evm.ChainCollection {
+	cc := new(evmmocks.ChainCollection)
+	ch := new(evmmocks.Chain)
+	ch.On("Client").Return(ethClient)
+	ch.On("Config").Return(cfg)
+	cc.On("Default").Return(ch, nil)
+	cc.On("Get", (*big.Int)(nil)).Return(ch, nil)
+	return cc
 }

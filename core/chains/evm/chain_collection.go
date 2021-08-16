@@ -1,7 +1,6 @@
 package evm
 
 import (
-	"fmt"
 	"math/big"
 
 	"github.com/pkg/errors"
@@ -18,6 +17,7 @@ import (
 
 var _ ChainCollection = &chainCollection{}
 
+//go:generate mockery --name ChainCollection --output ./mocks/ --case=underscore
 type ChainCollection interface {
 	service.Service
 	Get(id *big.Int) (Chain, error)
@@ -59,7 +59,7 @@ func (cll *chainCollection) Ready() (err error) {
 
 func (cll *chainCollection) Get(id *big.Int) (Chain, error) {
 	if id == nil {
-		panic("FIXME: return default?")
+		return nil, errors.New("cannot lookup chain by nil ID")
 	}
 	c, exists := cll.chains[id.String()]
 	if exists {
@@ -69,6 +69,12 @@ func (cll *chainCollection) Get(id *big.Int) (Chain, error) {
 }
 
 func (cll *chainCollection) Default() (Chain, error) {
+	if len(cll.chains) == 0 {
+		return nil, errors.New("no chains loaded, are you running with ETHEREUM_DISABLED=true ?")
+	}
+	if cll.defaultID == nil {
+		return nil, errors.New("no default chain ID specified")
+	}
 	return cll.Get(cll.defaultID)
 }
 
@@ -127,8 +133,6 @@ func NewChainCollection(opts ChainCollectionOpts, dbchains []types.Chain) (Chain
 	var err error
 	cll := &chainCollection{opts.Config.DefaultChainID(), make(map[string]*chain)}
 	for i := range dbchains {
-		fmt.Println("BALLS chain", i, dbchains[i])
-		fmt.Println("BALLS chain.node", i, dbchains[i].Nodes)
 		chain, err2 := newChain(dbchains[i], opts)
 		if err2 != nil {
 			err = multierr.Combine(err, err2)

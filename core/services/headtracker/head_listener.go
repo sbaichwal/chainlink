@@ -3,6 +3,7 @@ package headtracker
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -40,6 +41,7 @@ type Config interface {
 type HeadListener struct {
 	config           Config
 	ethClient        eth.Client
+	chainID          big.Int
 	headers          chan *models.Head
 	headSubscription ethereum.Subscription
 	connectedMutex   sync.RWMutex
@@ -70,6 +72,7 @@ func NewHeadListener(l *logger.Logger,
 	return &HeadListener{
 		config:    config,
 		ethClient: ethClient,
+		chainID:   ethClient.ChainID(),
 		sleeper:   sleeper,
 		log:       l,
 		chStop:    chStop,
@@ -140,6 +143,7 @@ func (hl *HeadListener) receiveHeaders(ctx context.Context, handleNewHead func(c
 				hl.logger().Error("HeadTracker: got nil block header")
 				continue
 			}
+			blockHeader.EVMChainID = utils.NewBig(&hl.chainID)
 			promNumHeadsReceived.Inc()
 
 			err := handleNewHead(ctx, *blockHeader)

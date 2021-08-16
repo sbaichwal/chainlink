@@ -24,7 +24,6 @@ import (
 	"github.com/smartcontractkit/chainlink/core/services"
 	"github.com/smartcontractkit/chainlink/core/services/cron"
 	"github.com/smartcontractkit/chainlink/core/services/directrequest"
-	"github.com/smartcontractkit/chainlink/core/services/eth"
 	"github.com/smartcontractkit/chainlink/core/services/feeds"
 	"github.com/smartcontractkit/chainlink/core/services/fluxmonitorv2"
 	"github.com/smartcontractkit/chainlink/core/services/health"
@@ -98,7 +97,6 @@ type ChainlinkApplication struct {
 	pipelineRunner           pipeline.Runner
 	FeedsService             feeds.Service
 	webhookJobRunner         webhook.JobRunner
-	ethClient                eth.Client
 	Store                    *strpkg.Store
 	Config                   config.GeneralConfig
 	KeyStore                 *keystore.Master
@@ -106,7 +104,6 @@ type ChainlinkApplication struct {
 	SessionReaper            utils.SleeperTask
 	shutdownOnce             sync.Once
 	shutdownSignal           gracefulpanic.Signal
-	balanceMonitor           services.BalanceMonitor
 	explorerClient           synchronization.ExplorerClient
 	telemetryIngressClient   synchronization.TelemetryIngressClient
 	subservices              []service.Service
@@ -270,11 +267,14 @@ func NewApplication(opts ApplicationOpts) (Application, error) {
 
 	// TODO: Make feeds manager compatible with multiple chains
 	// See: https://app.clubhouse.io/chainlinklabs/story/14615/add-ability-to-set-chain-id-in-all-pipeline-tasks-that-interact-with-evm
-	chain, err := chainCollection.Default()
-	if err != nil {
-		logger.Fatal(err)
+	var feedsService feeds.Service
+	if !cfg.EthereumDisabled() {
+		chain, err := chainCollection.Default()
+		if err != nil {
+			logger.Fatal(err)
+		}
+		feedsService = feeds.NewService(feedsORM, verORM, gormTxm, jobSpawner, keyStore.CSA(), keyStore.Eth(), chain.Config(), chainCollection)
 	}
-	feedsService := feeds.NewService(feedsORM, verORM, gormTxm, jobSpawner, keyStore.CSA(), keyStore.Eth(), chain.Config(), chainCollection)
 
 	app := &ChainlinkApplication{
 		ChainCollection:          chainCollection,
@@ -301,7 +301,7 @@ func NewApplication(opts ApplicationOpts) (Application, error) {
 	}
 
 	for _, service := range app.subservices {
-		if err = app.HealthChecker.Register(reflect.TypeOf(service).String(), service); err != nil {
+		if err := app.HealthChecker.Register(reflect.TypeOf(service).String(), service); err != nil {
 			return nil, err
 		}
 	}
@@ -357,8 +357,10 @@ func (app *ChainlinkApplication) Start() error {
 		return err
 	}
 
-	if err := app.FeedsService.Start(); err != nil {
-		logger.Infof("[Feeds Service] %v", err)
+	if app.FeedsService != nil {
+		if err := app.FeedsService.Start(); err != nil {
+			logger.Infof("[Feeds Service] %v", err)
+		}
 	}
 
 	for _, subservice := range app.subservices {
@@ -426,18 +428,16 @@ func (app *ChainlinkApplication) stop() error {
 		merr = multierr.Append(merr, app.Store.Close())
 		logger.Debug("Closing HealthChecker...")
 		merr = multierr.Append(merr, app.HealthChecker.Close())
-		logger.Debug("Closing Feeds Service...")
-		merr = multierr.Append(merr, app.FeedsService.Close())
+		if app.FeedsService != nil {
+			logger.Debug("Closing Feeds Service...")
+			merr = multierr.Append(merr, app.FeedsService.Close())
+		}
 
 		logger.Info("Exited all services")
 
 		app.started = false
 	})
 	return merr
-}
-
-func (app *ChainlinkApplication) GetEthClient() eth.Client {
-	return app.ethClient
 }
 
 func (app *ChainlinkApplication) GetConfig() config.GeneralConfig {

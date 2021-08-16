@@ -25,7 +25,9 @@ func NewORM(db *gorm.DB, chainID big.Int) *ORM {
 // IdempotentInsertHead inserts a head only if the hash is new. Will do nothing if hash exists already.
 // No advisory lock required because this is thread safe.
 func (orm *ORM) IdempotentInsertHead(ctx context.Context, h models.Head) error {
-	if ((*big.Int)(&h.EVMChainID)).Cmp((*big.Int)(&orm.chainID)) != 0 {
+	if h.EVMChainID == nil {
+		h.EVMChainID = &orm.chainID
+	} else if ((*big.Int)(h.EVMChainID)).Cmp((*big.Int)(&orm.chainID)) != 0 {
 		return errors.Errorf("head chain ID %s does not match orm chain ID %s", h.EVMChainID.String(), orm.chainID.String())
 	}
 	err := orm.db.
@@ -64,7 +66,7 @@ func (orm *ORM) Chain(ctx context.Context, hash common.Hash, lookback uint) (mod
 	UNION
 		SELECT h.* FROM heads h
 		JOIN chain ON chain.parent_hash = h.hash
-	) SELECT id, hash, number, parent_hash, timestamp, created_at FROM chain LIMIT ?
+	) SELECT id, hash, number, parent_hash, timestamp, created_at, l1_block_number, evm_chain_id FROM chain LIMIT ?
 	`, orm.chainID, hash, lookback).Rows()
 	if err != nil {
 		return models.Head{}, err
@@ -74,7 +76,7 @@ func (orm *ORM) Chain(ctx context.Context, hash common.Hash, lookback uint) (mod
 	var prevHead *models.Head
 	for rows.Next() {
 		h := models.Head{}
-		if err := rows.Scan(&h.ID, &h.Hash, &h.Number, &h.ParentHash, &h.Timestamp, &h.CreatedAt); err != nil {
+		if err := rows.Scan(&h.ID, &h.Hash, &h.Number, &h.ParentHash, &h.Timestamp, &h.CreatedAt, &h.L1BlockNumber, &h.EVMChainID); err != nil {
 			return models.Head{}, err
 		}
 		if firstHead == nil {

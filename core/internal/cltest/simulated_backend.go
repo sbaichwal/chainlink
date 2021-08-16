@@ -28,9 +28,12 @@ import (
 	"github.com/smartcontractkit/chainlink/core/logger"
 	"github.com/smartcontractkit/chainlink/core/services/bulletprooftxmanager"
 	"github.com/smartcontractkit/chainlink/core/services/eth"
+	"github.com/smartcontractkit/chainlink/core/services/postgres"
 	"github.com/smartcontractkit/chainlink/core/store/models"
 	"github.com/smartcontractkit/chainlink/core/utils"
 )
+
+const SimulatedBackendEVMChainID int64 = 1337
 
 // newIdentity returns a go-ethereum abstraction of an ethereum account for
 // interacting with contract golang wrappers
@@ -50,7 +53,8 @@ func NewApplicationWithConfigAndKeyOnSimulatedBlockchain(
 	cfg.Overrides.DefaultChainID = chainId
 
 	client := &SimulatedBackendClient{b: backend, t: t, chainId: int(chainId.Int64())}
-	flagsAndDeps = append(flagsAndDeps, client)
+	eventBroadcaster := postgres.NewEventBroadcaster(cfg.DatabaseURL(), 0, 0)
+	flagsAndDeps = append(flagsAndDeps, client, eventBroadcaster)
 
 	app, appCleanup := NewApplicationWithConfigAndKey(t, cfg, flagsAndDeps...)
 	err := app.KeyStore.Eth().Unlock(Password)
@@ -61,7 +65,7 @@ func NewApplicationWithConfigAndKeyOnSimulatedBlockchain(
 
 func MustNewSimulatedBackendKeyedTransactor(t *testing.T, key *ecdsa.PrivateKey) *bind.TransactOpts {
 	t.Helper()
-	return MustNewKeyedTransactor(t, key, 1337)
+	return MustNewKeyedTransactor(t, key, SimulatedBackendEVMChainID)
 }
 
 func MustNewKeyedTransactor(t *testing.T, key *ecdsa.PrivateKey, chainID int64) *bind.TransactOpts {
@@ -267,6 +271,7 @@ func (c *SimulatedBackendClient) HeadByNumber(ctx context.Context, n *big.Int) (
 		return nil, ethereum.NotFound
 	}
 	return &models.Head{
+		EVMChainID: utils.NewBigI(SimulatedBackendEVMChainID),
 		Hash:       header.Hash(),
 		Number:     header.Number.Int64(),
 		ParentHash: header.ParentHash,

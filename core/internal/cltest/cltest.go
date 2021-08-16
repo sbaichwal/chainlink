@@ -77,6 +77,7 @@ import (
 
 	"github.com/smartcontractkit/chainlink/core/internal/testutils/configtest"
 	"github.com/smartcontractkit/chainlink/core/internal/testutils/evmtest"
+
 	// Force import of pgtest to ensure that txdb is registered as a DB driver
 	_ "github.com/smartcontractkit/chainlink/core/internal/testutils/pgtest"
 )
@@ -359,14 +360,15 @@ const (
 	UseRealExternalInitiatorManager = "UseRealExternalInitiatorManager"
 )
 
-// NewApplicationWithConfig creates a New TestApplication with specified test config
-// TODO: Need some way to pass in a chain collection here
+// NewApplicationWithConfig creates a New TestApplication with specified test config.
+// This should only be used in full integration tests. For controller tests, see NewApplicationEthereumDisabled
 func NewApplicationWithConfig(t testing.TB, cfg *configtest.TestGeneralConfig, flagsAndDeps ...interface{}) (*TestApplication, func()) {
 	t.Helper()
 
 	var ethClient eth.Client = &eth.NullClient{}
 
 	var advisoryLocker postgres.AdvisoryLocker = &postgres.NullAdvisoryLocker{}
+	var eventBroadcaster postgres.EventBroadcaster = postgres.NewNullEventBroadcaster()
 	shutdownSignal := &testShutdownSignal{t}
 	store, err := strpkg.NewInsecureStore(cfg, advisoryLocker, shutdownSignal)
 	require.NoError(t, err)
@@ -386,6 +388,8 @@ func NewApplicationWithConfig(t testing.TB, cfg *configtest.TestGeneralConfig, f
 			externalInitiatorManager = dep
 		case evmtypes.Chain:
 			chainToInsert = dep
+		case postgres.EventBroadcaster:
+			eventBroadcaster = dep
 		default:
 			switch flag {
 			case UseRealExternalInitiatorManager:
@@ -399,7 +403,6 @@ func NewApplicationWithConfig(t testing.TB, cfg *configtest.TestGeneralConfig, f
 		evmtest.MustInsertChainWithNode(t, db, chainToInsert)
 	}
 	keyStore := keystore.New(db, utils.FastScryptParams)
-	eventBroadcaster := postgres.NewNullEventBroadcaster()
 	logger := cfg.CreateProductionLogger()
 	chainCollection, err := evm.LoadChainCollection(evm.ChainCollectionOpts{
 		Config:           cfg,

@@ -1,6 +1,8 @@
 module github.com/smartcontractkit/chainlink
 
-go 1.17
+go 1.16
+
+replace github.com/ethereum/go-ethereum => /Users/sam/code/smartcontractkit/go-ethereum
 
 require (
 	github.com/DATA-DOG/go-txdb v0.1.4
@@ -117,7 +119,6 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/holiman/bloomfilter/v2 v2.0.3 // indirect
 	github.com/holiman/uint256 v1.2.0 // indirect
-	github.com/huin/goupnp v1.0.1-0.20210310174557-0ca763054c88 // indirect
 	github.com/ipfs/go-cid v0.0.7 // indirect
 	github.com/ipfs/go-datastore v0.4.5 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect

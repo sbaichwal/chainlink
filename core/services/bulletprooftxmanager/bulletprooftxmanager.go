@@ -96,6 +96,7 @@ type BulletproofTxManager struct {
 	advisoryLocker   postgres.AdvisoryLocker
 	eventBroadcaster postgres.EventBroadcaster
 	gasEstimator     gas.Estimator
+	chainID          big.Int
 
 	chHeads chan models.Head
 	trigger chan common.Address
@@ -116,6 +117,8 @@ func NewBulletproofTxManager(db *gorm.DB, ethClient eth.Client, config Config, k
 		keyStore:         keyStore,
 		advisoryLocker:   advisoryLocker,
 		eventBroadcaster: eventBroadcaster,
+		gasEstimator:     gas.NewEstimator(ethClient, config),
+		chainID:          ethClient.ChainID(),
 		chHeads:          make(chan models.Head),
 		trigger:          make(chan common.Address),
 		chStop:           make(chan struct{}),
@@ -125,14 +128,12 @@ func NewBulletproofTxManager(db *gorm.DB, ethClient eth.Client, config Config, k
 	} else {
 		logger.Info("EthResender: Disabled")
 	}
-	// TODO: Move the reaper up a level
+	// TODO: Move the reaper up a level?
 	if config.EthTxReaperThreshold() > 0 {
 		b.reaper = NewReaper(db, config)
 	} else {
 		logger.Info("EthTxReaper: Disabled")
 	}
-	// TODO: Move the estimator up a level
-	b.gasEstimator = gas.NewEstimator(ethClient, config)
 
 	return &b
 }
@@ -273,12 +274,12 @@ func (b *BulletproofTxManager) CreateEthTransaction(db *gorm.DB, fromAddress, to
 	value := 0
 	err = postgres.GormTransactionWithDefaultContext(db, func(tx *gorm.DB) error {
 		res := tx.Raw(`
-INSERT INTO eth_txes (from_address, to_address, encoded_payload, value, gas_limit, state, created_at, meta, subject)
+INSERT INTO eth_txes (from_address, to_address, encoded_payload, value, gas_limit, state, created_at, meta, subject, evm_chain_id)
 VALUES (
-?,?,?,?,?,'unstarted',NOW(),?,?
+?,?,?,?,?,'unstarted',NOW(),?,?,?
 )
 RETURNING "eth_txes".*
-`, fromAddress, toAddress, payload, value, gasLimit, metaBytes, strategy.Subject()).Scan(&etx)
+`, fromAddress, toAddress, payload, value, gasLimit, metaBytes, strategy.Subject(), b.chainID.String()).Scan(&etx)
 		err = res.Error
 		if err != nil {
 			return errors.Wrap(err, "BulletproofTxManager#CreateEthTransaction failed to insert eth_tx")

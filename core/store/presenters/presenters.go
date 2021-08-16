@@ -39,6 +39,7 @@ type EnvPrinter struct {
 	DatabaseBackupMode                         string          `json:"DATABASE_BACKUP_MODE"`
 	DatabaseMaximumTxDuration                  time.Duration   `json:"DATABASE_MAXIMUM_TX_DURATION"`
 	DatabaseTimeout                            models.Duration `json:"DATABASE_TIMEOUT"`
+	DefaultChainID                             string          `json:"ETH_CHAIN_ID"`
 	DefaultHTTPLimit                           int64           `json:"DEFAULT_HTTP_LIMIT"`
 	DefaultHTTPTimeout                         models.Duration `json:"DEFAULT_HTTP_TIMEOUT"`
 	Dev                                        bool            `json:"CHAINLINK_DEV"`
@@ -125,6 +126,7 @@ func NewConfigPrinter(config config.GeneralConfig) (ConfigPrinter, error) {
 			DatabaseBackupMode:                    string(config.DatabaseBackupMode()),
 			DatabaseMaximumTxDuration:             config.DatabaseMaximumTxDuration(),
 			DatabaseTimeout:                       config.DatabaseTimeout(),
+			DefaultChainID:                        config.DefaultChainID().String(),
 			DefaultHTTPLimit:                      config.DefaultHTTPLimit(),
 			DefaultHTTPTimeout:                    config.DefaultHTTPTimeout(),
 			Dev:                                   config.Dev(),

@@ -36,7 +36,7 @@ var (
 
 type startOptions struct {
 	// Set the config options
-	SetConfig func(cfg *configtest.TestEVMConfig)
+	SetConfig func(cfg *configtest.TestGeneralConfig)
 	// Use to set up mocks on the app
 	FlagsAndDeps []interface{}
 	// Add a key on start up
@@ -54,10 +54,11 @@ func startNewApplication(t *testing.T, setup ...func(opts *startOptions)) *cltes
 	}
 
 	// Setup config
-	config := cltest.NewTestEVMConfig(t)
-	config.Overrides.EvmNonceAutoSync = null.BoolFrom(false)
-	config.GeneralConfig.Overrides.SetDefaultHTTPTimeout(30 * time.Millisecond)
-	config.GeneralConfig.Overrides.DefaultMaxHTTPAttempts = null.IntFrom(1)
+	config := cltest.NewTestGeneralConfig(t)
+	// TODO: Chain cfg?
+	// config.Overrides.EvmNonceAutoSync = null.BoolFrom(false)
+	config.Overrides.SetDefaultHTTPTimeout(30 * time.Millisecond)
+	config.Overrides.DefaultMaxHTTPAttempts = null.IntFrom(1)
 
 	if sopts.SetConfig != nil {
 		sopts.SetConfig(config)
@@ -237,8 +238,8 @@ func TestClient_DestroyExternalInitiator_NotFound(t *testing.T) {
 func TestClient_RemoteLogin(t *testing.T) {
 	t.Parallel()
 
-	app := startNewApplication(t, withConfigSet(func(c *configtest.TestEVMConfig) {
-		c.GeneralConfig.Overrides.AdminCredentialsFile = null.StringFrom("")
+	app := startNewApplication(t, withConfigSet(func(c *configtest.TestGeneralConfig) {
+		c.Overrides.AdminCredentialsFile = null.StringFrom("")
 	}))
 
 	tests := []struct {
@@ -307,7 +308,7 @@ func TestClient_ChangePassword(t *testing.T) {
 	require.Contains(t, err.Error(), "Unauthorized")
 }
 
-func TestClient_SetMinimumGasPrice(t *testing.T) {
+func TestClient_SetDefaultGasPrice(t *testing.T) {
 	t.Parallel()
 
 	app := startNewApplication(t,
@@ -316,38 +317,73 @@ func TestClient_SetMinimumGasPrice(t *testing.T) {
 	)
 	client, _ := app.NewClientAndRenderer()
 
-	set := flag.NewFlagSet("setgasprice", 0)
-	set.Parse([]string{"8616460799"})
+	t.Run("without specifying chain id", func(t *testing.T) {
+		set := flag.NewFlagSet("setgasprice", 0)
+		set.Parse([]string{"8616460799"})
 
-	c := cli.NewContext(nil, set, nil)
+		c := cli.NewContext(nil, set, nil)
 
-	assert.NoError(t, client.SetMinimumGasPrice(c))
-	assert.Equal(t, big.NewInt(8616460799), app.GetEVMConfig().EvmGasPriceDefault())
+		assert.NoError(t, client.SetMinimumGasPrice(c))
+		ch, err := app.GetChainCollection().Default()
+		require.NoError(t, err)
+		cfg := ch.Config()
+		assert.Equal(t, big.NewInt(8616460799), cfg.EvmGasPriceDefault())
 
-	client, _ = app.NewClientAndRenderer()
-	set = flag.NewFlagSet("setgasprice", 0)
-	set.String("amount", "861.6460799", "")
-	set.Bool("gwei", true, "")
-	set.Parse([]string{"-gwei", "861.6460799"})
+		client, _ = app.NewClientAndRenderer()
+		set = flag.NewFlagSet("setgasprice", 0)
+		set.String("amount", "861.6460799", "")
+		set.Bool("gwei", true, "")
+		set.Parse([]string{"-gwei", "861.6460799"})
 
-	c = cli.NewContext(nil, set, nil)
-	assert.NoError(t, client.SetMinimumGasPrice(c))
-	assert.Equal(t, big.NewInt(861646079900), app.GetEVMConfig().EvmGasPriceDefault())
+		c = cli.NewContext(nil, set, nil)
+		assert.NoError(t, client.SetMinimumGasPrice(c))
+		assert.Equal(t, big.NewInt(861646079900), cfg.EvmGasPriceDefault())
+	})
+
+	t.Run("specifying wrong chain id", func(t *testing.T) {
+		set := flag.NewFlagSet("setgasprice", 0)
+		set.Parse([]string{"8616"})
+		set.String("evmChainID", "985435435435", "")
+
+		c := cli.NewContext(nil, set, nil)
+
+		assert.EqualError(t, client.SetMinimumGasPrice(c), "foo")
+
+		ch, err := app.GetChainCollection().Default()
+		require.NoError(t, err)
+		cfg := ch.Config()
+		assert.Equal(t, big.NewInt(861646079900), cfg.EvmGasPriceDefault())
+	})
+
+	t.Run("specifying chain id", func(t *testing.T) {
+		set := flag.NewFlagSet("setgasprice", 0)
+		set.Parse([]string{"8616"})
+		set.String("evmChainID", "0", "")
+
+		c := cli.NewContext(nil, set, nil)
+
+		assert.NoError(t, client.SetMinimumGasPrice(c))
+		ch, err := app.GetChainCollection().Default()
+		require.NoError(t, err)
+		cfg := ch.Config()
+
+		assert.Equal(t, big.NewInt(8616), cfg.EvmGasPriceDefault())
+	})
 }
 
 func TestClient_GetConfiguration(t *testing.T) {
 	t.Parallel()
 
 	app := startNewApplication(t)
-	cfg := app.GetEVMConfig()
 	client, r := app.NewClientAndRenderer()
+	cfg := app.GetConfig()
 
 	assert.NoError(t, client.GetConfiguration(cltest.EmptyCLIContext()))
 	require.Equal(t, 1, len(r.Renders))
 
 	cp := *r.Renders[0].(*presenters.ConfigPrinter)
 	assert.Equal(t, cp.EnvPrinter.BridgeResponseURL, cfg.BridgeResponseURL().String())
-	assert.Equal(t, cp.EnvPrinter.ChainID, cfg.ChainID())
+	assert.Equal(t, cp.EnvPrinter.DefaultChainID, cfg.DefaultChainID())
 	assert.Equal(t, cp.EnvPrinter.Dev, cfg.Dev())
 	assert.Equal(t, cp.EnvPrinter.LogLevel, cfg.LogLevel())
 	assert.Equal(t, cp.EnvPrinter.LogSQLStatements, cfg.LogSQLStatements())
@@ -428,7 +464,7 @@ func TestClient_AutoLogin(t *testing.T) {
 		Password: cltest.Password,
 	}
 	client, _ := app.NewClientAndRenderer()
-	client.CookieAuthenticator = cmd.NewSessionCookieAuthenticator(app.GetEVMConfig(), &cmd.MemoryCookieStore{})
+	client.CookieAuthenticator = cmd.NewSessionCookieAuthenticator(app.GetConfig(), &cmd.MemoryCookieStore{})
 	client.HTTP = cmd.NewAuthenticatedHTTPClient(app.Config, client.CookieAuthenticator, sr)
 
 	fs := flag.NewFlagSet("", flag.ExitOnError)

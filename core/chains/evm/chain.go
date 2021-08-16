@@ -28,6 +28,7 @@ type ChainIdentification interface {
 	IsOptimism() bool
 }
 
+//go:generate mockery --name Chain --output ./mocks/ --case=underscore
 type Chain interface {
 	service.Service
 	ChainIdentification
@@ -65,8 +66,9 @@ func newChain(dbchain types.Chain, opts ChainCollectionOpts) (*chain, error) {
 		return nil, errors.Wrapf(err, "cannot create new chain with ID %d, config validation failed", dbchain.ID.ToInt())
 	}
 	db := opts.DB
+	chainID := dbchain.ID.ToInt()
 	// TODO: Pass this logger into all subservices
-	l := opts.Logger.With("chainID", dbchain.ID.String())
+	l := opts.Logger.With("chainID", chainID.String())
 	serviceLogLevels, err := opts.Logger.GetServiceLogLevels()
 	if err != nil {
 		return nil, err
@@ -86,7 +88,7 @@ func newChain(dbchain types.Chain, opts ChainCollectionOpts) (*chain, error) {
 		return nil, err
 	}
 	headBroadcaster := headtracker.NewHeadBroadcaster()
-	orm := headtracker.NewORM(db, *dbchain.ID.ToInt())
+	orm := headtracker.NewORM(db, *chainID)
 	headTracker := headtracker.NewHeadTracker(headTrackerLogger, client, cfg, orm, headBroadcaster)
 	txm := bulletprooftxmanager.NewBulletproofTxManager(db, client, cfg, opts.KeyStore, opts.AdvisoryLocker, opts.EventBroadcaster)
 
@@ -101,7 +103,7 @@ func newChain(dbchain types.Chain, opts ChainCollectionOpts) (*chain, error) {
 		balanceMonitor = services.NewBalanceMonitor(db, client, opts.KeyStore)
 	}
 
-	logBroadcaster := log.NewBroadcaster(log.NewORM(db), client, cfg, highestSeenHead)
+	logBroadcaster := log.NewBroadcaster(log.NewORM(db, *chainID), client, cfg, highestSeenHead)
 	// Log Broadcaster waits for other services' registrations
 	// until app.LogBroadcaster.DependentReady() call (see below)
 	logBroadcaster.AddDependents(1)
@@ -112,7 +114,7 @@ func newChain(dbchain types.Chain, opts ChainCollectionOpts) (*chain, error) {
 
 	c := chain{
 		utils.StartStopOnce{},
-		dbchain.ID.ToInt(),
+		chainID,
 		cfg,
 		client,
 		txm,

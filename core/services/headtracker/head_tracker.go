@@ -344,7 +344,6 @@ func (ht *HeadTracker) handleNewHead(ctx context.Context, head models.Head) erro
 	if prevHead == nil || head.Number > prevHead.Number {
 		promCurrentHead.Set(float64(head.Number))
 
-		fmt.Println("BALLS", ht.config.EvmFinalityDepth())
 		headWithChain, err := ht.headSaver.Chain(ctx, head.Hash, ht.config.EvmFinalityDepth())
 		if ctx.Err() != nil {
 			return nil

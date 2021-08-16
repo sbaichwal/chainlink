@@ -309,12 +309,12 @@ func (client *client) BlockByNumber(ctx context.Context, number *big.Int) (*type
 }
 
 func (client *client) HeadByNumber(ctx context.Context, number *big.Int) (head *models.Head, err error) {
-	fmt.Println("BALLS client", client)
 	hex := toBlockNumArg(number)
 	err = client.primary.CallContext(ctx, &head, "eth_getBlockByNumber", hex, false)
 	if err == nil && head == nil {
 		err = ethereum.NotFound
 	}
+	head.EVMChainID = utils.NewBig(&client.chainID)
 	return
 }
 
@@ -341,6 +341,7 @@ func (client *client) SubscribeFilterLogs(ctx context.Context, q ethereum.Filter
 }
 
 func (client *client) SubscribeNewHead(ctx context.Context, ch chan<- *models.Head) (ethereum.Subscription, error) {
+	// TODO: Need some way to intercept heads and inject the chain ID?
 	return client.primary.EthSubscribe(ctx, ch, "newHeads")
 }
 
