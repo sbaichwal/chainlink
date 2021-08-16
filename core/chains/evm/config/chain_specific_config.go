@@ -58,6 +58,10 @@ var chainSpecificConfigDefaultSets map[int64]chainSpecificConfigDefaultSet
 // It can be overridden on a per-chain basis and may be used if the chain is unknown
 var fallbackDefaultSet chainSpecificConfigDefaultSet
 
+func init() {
+	setchainSpecificConfigDefaultSets()
+}
+
 func setchainSpecificConfigDefaultSets() {
 	// --------------------------IMPORTANT---------------------------
 	// All config sets should "inherit" from fallbackDefaultSet and overwrite

@@ -66,15 +66,15 @@ var (
 )
 
 func (defaultBackend) SetUnconfirmedTransactions(evmChainID *big.Int, n int64) {
-	promUnconfirmedTransactions.WithLabelValues("evmChainID", evmChainID.String()).Set(float64(n))
+	promUnconfirmedTransactions.WithLabelValues(evmChainID.String()).Set(float64(n))
 }
 
 func (defaultBackend) SetMaxUnconfirmedAge(evmChainID *big.Int, s float64) {
-	promMaxUnconfirmedAge.WithLabelValues("evmChainID", evmChainID.String()).Set(s)
+	promMaxUnconfirmedAge.WithLabelValues(evmChainID.String()).Set(s)
 }
 
 func (defaultBackend) SetMaxUnconfirmedBlocks(evmChainID *big.Int, n int64) {
-	promMaxUnconfirmedBlocks.WithLabelValues("evmChainID", evmChainID.String()).Set(float64(n))
+	promMaxUnconfirmedBlocks.WithLabelValues(evmChainID.String()).Set(float64(n))
 }
 
 func (defaultBackend) SetPipelineRunsQueued(n int) {
@@ -165,7 +165,7 @@ func (pr *promReporter) reportHeadMetrics(ctx context.Context, head models.Head)
 }
 
 func (pr *promReporter) reportPendingEthTxes(ctx context.Context, evmChainID *big.Int) (err error) {
-	rows, err := pr.db.QueryContext(ctx, `SELECT count(*) FROM eth_txes WHERE state = 'unconfirmed' AND evm_chain_id = ?`, evmChainID.String())
+	rows, err := pr.db.QueryContext(ctx, `SELECT count(*) FROM eth_txes WHERE state = 'unconfirmed' AND evm_chain_id = $1`, evmChainID.String())
 	if err != nil {
 		return errors.Wrap(err, "failed to query for unconfirmed eth_tx count")
 	}
@@ -186,7 +186,7 @@ func (pr *promReporter) reportPendingEthTxes(ctx context.Context, evmChainID *bi
 
 func (pr *promReporter) reportMaxUnconfirmedAge(ctx context.Context, evmChainID *big.Int) (err error) {
 	now := time.Now()
-	rows, err := pr.db.QueryContext(ctx, `SELECT min(broadcast_at) FROM eth_txes WHERE state = 'unconfirmed' AND evm_chain_id = ?`, evmChainID.String())
+	rows, err := pr.db.QueryContext(ctx, `SELECT min(broadcast_at) FROM eth_txes WHERE state = 'unconfirmed' AND evm_chain_id = $1`, evmChainID.String())
 	if err != nil {
 		return errors.Wrap(err, "failed to query for unconfirmed eth_tx count")
 	}
@@ -214,8 +214,8 @@ func (pr *promReporter) reportMaxUnconfirmedBlocks(ctx context.Context, head mod
 	rows, err := pr.db.QueryContext(ctx, `
 SELECT MIN(broadcast_before_block_num) FROM eth_tx_attempts
 JOIN eth_txes ON eth_txes.id = eth_tx_attempts.eth_tx_id
-AND eth_txes.state = 'unconfirmed'
-AND evm_chain_id = ?`, head.EVMChainID.String())
+WHERE eth_txes.state = 'unconfirmed'
+AND evm_chain_id = $1`, head.EVMChainID.String())
 	if err != nil {
 		return errors.Wrap(err, "failed to query for min broadcast_before_block_num")
 	}

@@ -903,13 +903,14 @@ func (c *generalConfig) P2PPeerID(override *p2pkey.PeerID) (p2pkey.PeerID, error
 	if override != nil {
 		return *override, nil
 	}
+	var err error
 	func() {
 		c.p2ppeerIDmtx.Lock()
 		defer c.p2ppeerIDmtx.Unlock()
 		if c.viper.GetString(EnvVarName("P2PPeerID")) == "" {
 			var keys []p2pkey.EncryptedP2PKey
 			if c.ORM == nil {
-				logger.Warnw("db was not set on config, falling back to env")
+				err = errors.New("db was not set on config")
 				return
 			}
 			err2 := c.ORM.db.Order("created_at asc, id asc").Find(&keys).Error
@@ -927,6 +928,9 @@ func (c *generalConfig) P2PPeerID(override *p2pkey.PeerID) (p2pkey.PeerID, error
 			}
 		}
 	}()
+	if err != nil {
+		return "", err
+	}
 
 	pidStr := c.viper.GetString(EnvVarName("P2PPeerID"))
 	if pidStr != "" {

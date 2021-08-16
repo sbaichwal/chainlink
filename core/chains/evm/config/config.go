@@ -85,6 +85,7 @@ func NewChainScopedConfig(db *gorm.DB, gcfg config.GeneralConfig, chain evmtypes
 		logger.Warnf("No chain-specific configuration found for chain %d, falling back to defaults", chain.ID.ToInt())
 		defaultSet = fallbackDefaultSet
 	}
+	fmt.Println("BALLS", defaultSet.gasBumpPercent)
 	css := chainScopedConfig{gcfg, orm, chain.Cfg, defaultSet, chain.ID.ToInt(), sync.RWMutex{}}
 	return &css
 }

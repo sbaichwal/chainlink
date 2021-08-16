@@ -494,6 +494,7 @@ func NewEthMocksWithStartupAssertions(t testing.TB) (*mocks.Client, *mocks.Subsc
 	c.On("SendTransaction", mock.Anything, mock.Anything).Maybe().Return(nil)
 	c.On("HeadByNumber", mock.Anything, (*big.Int)(nil)).Maybe().Return(Head(0), nil)
 	c.On("ChainID").Maybe().Return(*big.NewInt(eth.NullClientChainID))
+	c.On("Close").Maybe().Return()
 
 	block := types.NewBlockWithHeader(&types.Header{
 		Number: big.NewInt(100),

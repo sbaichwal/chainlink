@@ -302,11 +302,8 @@ func NewNullEventBroadcaster() *NullEventBroadcaster {
 
 var _ EventBroadcaster = &NullEventBroadcaster{}
 
-func (*NullEventBroadcaster) Start() error { return nil }
-func (ne *NullEventBroadcaster) Close() error {
-	ne.Sub.Close()
-	return nil
-}
+func (*NullEventBroadcaster) Start() error   { return nil }
+func (*NullEventBroadcaster) Close() error   { return nil }
 func (*NullEventBroadcaster) Ready() error   { return nil }
 func (*NullEventBroadcaster) Healthy() error { return nil }
 
@@ -325,7 +322,7 @@ type NullSubscription struct {
 }
 
 func (ns *NullSubscription) Events() <-chan Event          { return ns.Ch }
-func (ns *NullSubscription) Close()                        { close(ns.Ch) }
+func (ns *NullSubscription) Close()                        {}
 func (ns *NullSubscription) ChannelName() string           { return "" }
 func (ns *NullSubscription) InterestedIn(event Event) bool { return false }
 func (ns *NullSubscription) Send(event Event)              {}
