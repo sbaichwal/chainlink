@@ -174,16 +174,16 @@ func (ec *EthConfirmer) processHead(ctx context.Context, head models.Head) error
 	logger.Debugw("EthConfirmer: finished RebroadcastWhereNecessary", "headNum", head.Number, "time", time.Since(mark), "id", "eth_confirmer")
 	mark = time.Now()
 
-	if err := errors.Wrap(ec.EnsureConfirmedTransactionsInLongestChain(ctx, head), "EnsureConfirmedTransactionsInLongestChain failed"); err != nil {
-		return err
+	if err := ec.EnsureConfirmedTransactionsInLongestChain(ctx, head); err != nil {
+		return errors.Wrap(err, "EnsureConfirmedTransactionsInLongestChain failed")
 	}
 
 	logger.Debugw("EthConfirmer: finished EnsureConfirmedTransactionsInLongestChain", "headNum", head.Number, "time", time.Since(mark), "id", "eth_confirmer")
 
 	if ec.resumeCallback != nil {
 		mark = time.Now()
-		if err := errors.Wrap(ec.ResumePendingTaskRuns(ctx, head), "ResumePendingTaskRuns failed"); err != nil {
-			return err
+		if err := ec.ResumePendingTaskRuns(ctx, head); err != nil {
+			return errors.Wrap(err, "ResumePendingTaskRuns failed")
 		}
 
 		logger.Debugw("EthConfirmer: finished ResumePendingTaskRuns", "headNum", head.Number, "time", time.Since(mark), "id", "eth_confirmer")
