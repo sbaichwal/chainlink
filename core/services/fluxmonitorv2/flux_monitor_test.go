@@ -799,7 +799,11 @@ func TestFluxMonitor_TriggerIdleTimeThreshold(t *testing.T) {
 func TestFluxMonitor_HibernationTickerFiresMultipleTimes(t *testing.T) {
 	t.Parallel()
 
+<<<<<<< HEAD
 	store, _, nodeAddr := setupStoreWithKey(t)
+=======
+	store, nodeAddr := setupStoreWithKey(t)
+>>>>>>> d3f524fbe3aad20ff5d04ee9264ea273405d3307
 	oracles := []common.Address{nodeAddr, cltest.NewAddress()}
 
 	fm, tm := setup(t,

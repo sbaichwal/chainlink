@@ -193,7 +193,11 @@ type simpleLogListener struct {
 	received            *received
 	t                   *testing.T
 	db                  *gorm.DB
+<<<<<<< HEAD
 	jobID               int32
+=======
+	jobID               log.JobIdSelect
+>>>>>>> d3f524fbe3aad20ff5d04ee9264ea273405d3307
 	skipMarkingConsumed bool
 }
 
@@ -240,8 +244,19 @@ func (listener *simpleLogListener) HandleLog(lb log.Broadcast) {
 	}
 }
 
+<<<<<<< HEAD
 func (listener simpleLogListener) JobID() int32 {
 	return listener.jobID
+=======
+func (listener *simpleLogListener) JobID() models.JobID {
+	return listener.jobID.JobIDV1
+}
+func (listener *simpleLogListener) IsV2Job() bool {
+	return listener.jobID.IsV2
+}
+func (listener *simpleLogListener) JobIDV2() int32 {
+	return listener.jobID.JobIDV2
+>>>>>>> d3f524fbe3aad20ff5d04ee9264ea273405d3307
 }
 
 func (listener *simpleLogListener) getUniqueLogs() []types.Log {
@@ -256,6 +271,12 @@ func (listener *simpleLogListener) getUniqueLogsBlockNumbers() []uint64 {
 	return blockNums
 }
 
+<<<<<<< HEAD
+=======
+func (listener *simpleLogListener) getLogs() []types.Log {
+	return listener.received.logs
+}
+>>>>>>> d3f524fbe3aad20ff5d04ee9264ea273405d3307
 func (listener *simpleLogListener) requireAllReceived(t *testing.T, expectedState *received) {
 	received := listener.received
 	require.Eventually(t, func() bool {

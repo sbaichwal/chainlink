@@ -9,6 +9,7 @@ import (
 	pairingHeap "github.com/theodesp/go-heaps/pairing"
 )
 
+<<<<<<< HEAD
 type logPool struct {
 	// A mapping of block numbers to a set of block hashes for all
 	// the logs in the pool.
@@ -20,6 +21,15 @@ type logPool struct {
 	// in the pool (while the set of log block numbers is dynamically changing).
 	heap *pairingHeap.PairHeap
 }
+=======
+type (
+	logPool struct {
+		hashesByBlockNumbers map[uint64]map[common.Hash]struct{}
+		logsByBlockHash      map[common.Hash][]types.Log
+		heap                 *pairingHeap.PairHeap
+	}
+)
+>>>>>>> d3f524fbe3aad20ff5d04ee9264ea273405d3307
 
 func newLogPool() *logPool {
 	return &logPool{

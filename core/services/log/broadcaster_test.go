@@ -539,10 +539,18 @@ func TestBroadcaster_BroadcastsWithZeroConfirmations(t *testing.T) {
 		cltest.RawNewRoundLog(t, contract1.Address(), hash105, 105, 1, false),
 	}
 
+<<<<<<< HEAD
 	listener1 := helper.newLogListenerWithJob("listener 1")
 	// listener1 does not mark logs as consumed to check the correct number of sends
 	listener1.SkipMarkingConsumed(true)
 	listener2 := helper.newLogListenerWithJob("listener 2")
+=======
+	// listener1 does not mark logs as consumed to check the correct number of sends
+	listener1 := helper.newLogListener("listener 1")
+	listener1.SkipMarkingConsumed(true)
+
+	listener2 := helper.newLogListener("listener 2")
+>>>>>>> d3f524fbe3aad20ff5d04ee9264ea273405d3307
 
 	helper.register(listener1, contract1, 0)
 	helper.register(listener2, contract1, 0)
@@ -564,7 +572,11 @@ func TestBroadcaster_BroadcastsWithZeroConfirmations(t *testing.T) {
 	}
 
 	// 3 because only one listeners is marking logs as consumed
+<<<<<<< HEAD
 	requireBroadcastCount(t, helper.db, 3)
+=======
+	requireBroadcastCount(t, helper.store, 3)
+>>>>>>> d3f524fbe3aad20ff5d04ee9264ea273405d3307
 	helper.stop()
 
 	requireEqualLogs(t,
